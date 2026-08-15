@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-electron/
+release/
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+.DS_Store
+output/playwright/
+.playwright-cli/
+*.log
