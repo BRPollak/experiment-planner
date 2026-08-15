@@ -20,6 +20,7 @@
   "type": "module",
   "main": "dist-electron/main.mjs",
   "scripts": {
+    "postinstall": "install-electron",
     "dev": "concurrently -k -n api,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite --host 127.0.0.1",

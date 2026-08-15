@@ -51,6 +51,7 @@ test("packaging metadata includes required notices and release constraints", () 
   assert.equal(packageJson.version, packageLock.version);
   assert.equal(packageJson.version, packageLock.packages[""].version);
   assert.equal(packageJson.license, "UNLICENSED");
+  assert.equal(packageJson.scripts.postinstall, "install-electron");
   assert.equal(packageJson.build.mac.minimumSystemVersion, "12.0");
   assert.ok(packageJson.build.files.includes("!dist-electron/**/*.map"));
   assert.deepEqual(packageJson.build.extraResources, [
