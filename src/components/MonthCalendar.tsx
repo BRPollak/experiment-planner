@@ -8,7 +8,14 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { Experiment, Task } from "../../shared/models";
-import { getCalendarRange, monthHeading, shiftMonth, toDateKey, WEEKDAYS } from "../lib/dates";
+import {
+  getCalendarRange,
+  monthHeading,
+  shiftMonth,
+  toDateKey,
+  WEEKDAYS,
+  WEEKDAY_ORDER,
+} from "../lib/dates";
 import { formatTaskTime, sortTasks } from "../lib/tasks";
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, NotesIcon, PlusIcon } from "./Icons";
 
@@ -91,9 +98,10 @@ export function MonthCalendar({
       return;
     }
 
+    const columnIndex = visualIndex % 7;
     const offset = {
-      ArrowLeft: -1,
-      ArrowRight: 1,
+      ArrowLeft: columnIndex > 0 ? -1 : undefined,
+      ArrowRight: columnIndex < 6 ? 1 : undefined,
       ArrowUp: -7,
       ArrowDown: 7,
     }[event.key];
@@ -156,7 +164,11 @@ export function MonthCalendar({
       <div aria-busy={loading} className="calendar-body">
         {loading ? <div className="calendar-loading-bar" /> : null}
         <div className="weekday-header" role="row">
-          {WEEKDAYS.map((weekday) => <div key={weekday} role="columnheader">{weekday}</div>)}
+          {WEEKDAYS.map((weekday, index) => (
+            <div data-weekday={WEEKDAY_ORDER[index]} key={weekday} role="columnheader">
+              {weekday}
+            </div>
+          ))}
         </div>
         <div
           className="calendar-grid"

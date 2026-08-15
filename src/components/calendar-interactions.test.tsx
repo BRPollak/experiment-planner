@@ -248,7 +248,7 @@ test("a click originating inside a disabled moving task never activates its day 
   assert.deepEqual(spies.edited, []);
 });
 
-test("arrow keys follow chronological dates and child controls do not activate the cell", () => {
+test("arrow keys follow the visible weekend-bookend grid without wrapping backward", () => {
   const { container, spies } = renderCalendar();
   const monday = requireElement<HTMLElement>(container, '[data-date-key="2026-07-27"]');
   const tuesday = requireElement<HTMLElement>(container, '[data-date-key="2026-07-28"]');
@@ -266,40 +266,69 @@ test("arrow keys follow chronological dates and child controls do not activate t
   assert.equal(document.activeElement, nextMonday);
   act(() => friday.focus());
   keyDown(friday, "ArrowRight");
-  assert.equal(document.activeElement, saturday);
-  keyDown(saturday, "ArrowRight");
   assert.equal(document.activeElement, sunday);
+  keyDown(sunday, "ArrowRight");
+  assert.equal(document.activeElement, sunday);
+  act(() => saturday.focus());
+  keyDown(saturday, "ArrowRight");
+  assert.equal(document.activeElement, requireElement(container, '[data-date-key="2026-08-17"]'));
+  act(() => saturday.focus());
+  keyDown(saturday, "ArrowLeft");
+  assert.equal(document.activeElement, saturday);
 
   const addButton = requireElement(monday, ".calendar-day__add-task");
   keyDown(addButton, "Enter");
   assert.deepEqual(spies.opened, []);
 });
 
-test("headers, date placement, task lookup, and weekend identity match chronological columns", () => {
+test("headers, date placement, task lookup, and weekend identity match weekend-bookend columns", () => {
   const saturdayTask = makeTask("Saturday task", { date: "2026-08-01" });
   const mondayTask = makeTask("Monday task", { date: "2026-07-27" });
   const { container } = renderCalendar([mondayTask, saturdayTask]);
 
   assert.deepEqual(
     [...container.querySelectorAll(".weekday-header > div")].map((node) => node.textContent),
-    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    ["Saturday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Sunday"],
+  );
+  assert.deepEqual(
+    [...container.querySelectorAll<HTMLElement>(".weekday-header > div")]
+      .map((node) => node.dataset.weekday),
+    ["6", "1", "2", "3", "4", "5", "0"],
   );
   const firstRow = [...container.querySelectorAll<HTMLElement>(".calendar-day")].slice(0, 7);
   assert.deepEqual(firstRow.map((node) => node.dataset.dateKey), [
+    "2026-07-25",
     "2026-07-27",
     "2026-07-28",
     "2026-07-29",
     "2026-07-30",
     "2026-07-31",
-    "2026-08-01",
     "2026-08-02",
   ]);
-  assert.deepEqual(firstRow.map((node) => node.dataset.weekday), ["1", "2", "3", "4", "5", "6", "0"]);
-  assert.equal(firstRow[0].classList.contains("is-weekend"), false);
-  assert.equal(firstRow[5].classList.contains("is-weekend"), true);
+  assert.deepEqual(firstRow.map((node) => node.dataset.weekday), ["6", "1", "2", "3", "4", "5", "0"]);
+  assert.equal(firstRow[0].classList.contains("is-weekend"), true);
+  assert.equal(firstRow[1].classList.contains("is-weekend"), false);
   assert.equal(firstRow[6].classList.contains("is-weekend"), true);
-  assert.match(firstRow[0].textContent ?? "", /Monday task/);
-  assert.match(firstRow[5].textContent ?? "", /Saturday task/);
+  assert.match(firstRow[1].textContent ?? "", /Monday task/);
+
+  const saturday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-01"]');
+  assert.equal(saturday.dataset.weekday, "6");
+  assert.equal(saturday.classList.contains("is-weekend"), true);
+  assert.match(saturday.textContent ?? "", /Saturday task/);
+
+  const august15Index = [...container.querySelectorAll<HTMLElement>(".calendar-day")]
+    .findIndex((node) => node.dataset.dateKey === "2026-08-15");
+  const august15Row = [...container.querySelectorAll<HTMLElement>(".calendar-day")]
+    .slice(august15Index, august15Index + 7);
+  assert.deepEqual(august15Row.map((node) => node.dataset.dateKey), [
+    "2026-08-15",
+    "2026-08-17",
+    "2026-08-18",
+    "2026-08-19",
+    "2026-08-20",
+    "2026-08-21",
+    "2026-08-23",
+  ]);
 });
 
 test("calendar and expanded day view expose the same shared task order", () => {
@@ -337,6 +366,16 @@ test("the add-task control defaults visible for no-hover devices and reveals smo
   assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)/);
   assert.match(css, /\.calendar-day:hover \.calendar-day__add-task,[\s\S]*\.calendar-day:focus-within \.calendar-day__add-task/);
   assert.match(css, /transition:[^;]*opacity[^;]*transform/);
+});
+
+test("weekend headers and cells use the subtle planning treatment", () => {
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  assert.match(
+    css,
+    /\.weekday-header > \[data-weekday="6"\],[\s\S]*\.weekday-header > \[data-weekday="0"\]\s*\{[^}]*color:\s*#4f6075;[^}]*background-color:\s*#eef3f8;/,
+  );
+  assert.match(css, /\.calendar-day\.is-weekend\s*\{[^}]*background:\s*#f4f7fb;/s);
+  assert.match(css, /\.calendar-day\.is-weekend:hover\s*\{[^}]*background:\s*#edf3f9;/s);
 });
 
 test("day view groups in first-task order and renders time plus only nonblank descriptions", () => {

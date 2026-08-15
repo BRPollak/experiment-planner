@@ -674,6 +674,12 @@ select:focus-visible,
   text-transform: none;
 }
 
+.weekday-header > [data-weekday="6"],
+.weekday-header > [data-weekday="0"] {
+  color: #4f6075;
+  background-color: #eef3f8;
+}
+
 .weekday-header > div:last-child {
   border-right: 0;
 }
@@ -715,11 +721,11 @@ select:focus-visible,
 }
 
 .calendar-day.is-weekend {
-  background: #fcfdff;
+  background: #f4f7fb;
 }
 
 .calendar-day.is-weekend:hover {
-  background: #f8fbff;
+  background: #edf3f9;
 }
 
 .calendar-day:focus-visible {
