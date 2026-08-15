@@ -1,8 +1,15 @@
 import { execFileSync } from "node:child_process";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 
 const PLUTIL = "/usr/bin/plutil";
 const CODESIGN = "/usr/bin/codesign";
+
+export const requiredNoticeResources = Object.freeze([
+  Object.freeze({ filename: "LICENSE.electron.txt", minimumBytes: 100 }),
+  Object.freeze({ filename: "LICENSES.chromium.html", minimumBytes: 1_000 }),
+  Object.freeze({ filename: "THIRD_PARTY_NOTICES.txt", minimumBytes: 500 }),
+]);
 
 const unusedPermissionKeys = [
   "NSAudioCaptureUsageDescription",
@@ -34,6 +41,26 @@ function removeKey(plistPath, keyPath) {
   execFileSync(PLUTIL, ["-remove", keyPath, "--", plistPath], {
     stdio: "inherit",
   });
+}
+
+export function validateRequiredNoticeResources(appPath) {
+  const resourcesPath = join(appPath, "Contents", "Resources");
+
+  for (const { filename, minimumBytes } of requiredNoticeResources) {
+    const noticePath = join(resourcesPath, filename);
+    let noticeStat;
+    try {
+      noticeStat = statSync(noticePath);
+    } catch (error) {
+      throw new Error(`Required packaged notice is missing: ${noticePath}`, {
+        cause: error,
+      });
+    }
+
+    if (!noticeStat.isFile() || noticeStat.size < minimumBytes) {
+      throw new Error(`Required packaged notice is empty or invalid: ${noticePath}`);
+    }
+  }
 }
 
 /**
@@ -94,6 +121,8 @@ export default async function afterPack(context) {
   ) {
     throw new Error(`Failed to harden packaged Info.plist at ${plistPath}`);
   }
+
+  validateRequiredNoticeResources(appPath);
 
   // `identity: null` intentionally avoids Developer ID signing, but the
   // Electron distribution still contains nested signature metadata. Re-sign

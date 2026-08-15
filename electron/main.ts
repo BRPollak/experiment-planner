@@ -9,7 +9,10 @@ import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 
 import { createApplication } from "../server/app";
-import { ExperimentPlannerDatabase } from "../server/database";
+import {
+  ExperimentPlannerDatabase,
+  getDatabasePath,
+} from "../server/database";
 import { importLegacyDatabaseIfRequested } from "./legacy-import";
 
 const PRODUCT_NAME = "Experiment Planner";
@@ -77,10 +80,12 @@ function secureRendererSession(rendererSession: Session, allowedOrigin: string):
 }
 
 async function startApplicationServices(): Promise<void> {
-  const databasePath = join(app.getPath("userData"), DATABASE_FILENAME);
+  const databasePath = process.env.EXPERIMENT_PLANNER_DB?.trim()
+    ? getDatabasePath()
+    : join(app.getPath("userData"), DATABASE_FILENAME);
   await importLegacyDatabaseIfRequested(databasePath);
 
-  database = new ExperimentPlannerDatabase(databasePath);
+  database = await ExperimentPlannerDatabase.open(databasePath);
   const staticDirectory = join(app.getAppPath(), "dist");
   localServer = createServer(
     createApplication({

@@ -11,7 +11,7 @@ if (!Number.isInteger(configuredPort) || configuredPort < 1 || configuredPort > 
   throw new Error("PORT must be an integer between 1 and 65535.");
 }
 
-const database = new ExperimentPlannerDatabase(getDatabasePath());
+const database = await ExperimentPlannerDatabase.open(getDatabasePath());
 const staticDirectory = fileURLToPath(new URL("../dist", import.meta.url));
 const server = createServer(
   createApplication({
