@@ -58,6 +58,7 @@ export function MonthCalendar({
   const todayKey = toDateKey(new Date());
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [focusedDateKey, setFocusedDateKey] = useState<string | null>(null);
   const dayRefs = useRef(new Map<string, HTMLDivElement>());
 
   const experimentById = useMemo(
@@ -85,6 +86,14 @@ export function MonthCalendar({
   const suggestedTaskDate = isCurrentMonth
     ? todayKey
     : toDateKey(new Date(month.getFullYear(), month.getMonth(), 1));
+  const focusedDateIsVisible = focusedDateKey
+    ? range.days.some((day) => day.dateKey === focusedDateKey)
+    : false;
+  const gridTabStopDate = focusedDateIsVisible
+    ? focusedDateKey
+    : isCurrentMonth
+      ? todayKey
+      : range.days.find((day) => day.isCurrentMonth)?.dateKey ?? range.days[0].dateKey;
 
   const handleDayKeyDown = (
     event: KeyboardEvent<HTMLDivElement>,
@@ -99,17 +108,28 @@ export function MonthCalendar({
     }
 
     const columnIndex = visualIndex % 7;
-    const offset = {
-      ArrowLeft: columnIndex > 0 ? -1 : undefined,
-      ArrowRight: columnIndex < 6 ? 1 : undefined,
-      ArrowUp: -7,
-      ArrowDown: 7,
-    }[event.key];
+    let offset: number | undefined;
+    switch (event.key) {
+      case "ArrowLeft":
+        offset = columnIndex > 0 ? -1 : undefined;
+        break;
+      case "ArrowRight":
+        offset = columnIndex < 6 ? 1 : undefined;
+        break;
+      case "ArrowUp":
+        offset = -7;
+        break;
+      case "ArrowDown":
+        offset = 7;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
     if (offset === undefined) return;
 
     const nextDay = range.days[visualIndex + offset];
     if (!nextDay) return;
-    event.preventDefault();
     dayRefs.current.get(nextDay.dateKey)?.focus();
   };
 
@@ -208,13 +228,14 @@ export function MonthCalendar({
                   }
                 }}
                 onDrop={(event) => handleDrop(event, day.dateKey)}
+                onFocus={() => setFocusedDateKey(day.dateKey)}
                 onKeyDown={(event) => handleDayKeyDown(event, day.dateKey, visualIndex)}
                 ref={(element) => {
                   if (element) dayRefs.current.set(day.dateKey, element);
                   else dayRefs.current.delete(day.dateKey);
                 }}
                 role="gridcell"
-                tabIndex={0}
+                tabIndex={day.dateKey === gridTabStopDate ? 0 : -1}
               >
                 <div className="calendar-day__header">
                   <button

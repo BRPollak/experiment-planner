@@ -267,13 +267,15 @@ test("arrow keys follow the visible weekend-bookend grid without wrapping backwa
   act(() => friday.focus());
   keyDown(friday, "ArrowRight");
   assert.equal(document.activeElement, sunday);
-  keyDown(sunday, "ArrowRight");
+  const sundayBoundary = keyDown(sunday, "ArrowRight");
+  assert.equal(sundayBoundary.defaultPrevented, true);
   assert.equal(document.activeElement, sunday);
   act(() => saturday.focus());
   keyDown(saturday, "ArrowRight");
   assert.equal(document.activeElement, requireElement(container, '[data-date-key="2026-08-17"]'));
   act(() => saturday.focus());
-  keyDown(saturday, "ArrowLeft");
+  const saturdayBoundary = keyDown(saturday, "ArrowLeft");
+  assert.equal(saturdayBoundary.defaultPrevented, true);
   assert.equal(document.activeElement, saturday);
 
   const addButton = requireElement(monday, ".calendar-day__add-task");
@@ -329,6 +331,12 @@ test("headers, date placement, task lookup, and weekend identity match weekend-b
     "2026-08-21",
     "2026-08-23",
   ]);
+
+  const cells = [...container.querySelectorAll<HTMLElement>(".calendar-day")];
+  assert.equal(cells.filter((node) => node.tabIndex === 0).length, 1);
+  act(() => requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]').focus());
+  assert.equal(cells.filter((node) => node.tabIndex === 0).length, 1);
+  assert.equal(requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]').tabIndex, 0);
 });
 
 test("calendar and expanded day view expose the same shared task order", () => {
@@ -370,11 +378,23 @@ test("the add-task control defaults visible for no-hover devices and reveals smo
 
 test("weekend headers and cells use the subtle planning treatment", () => {
   const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-  assert.match(
-    css,
-    /\.weekday-header > \[data-weekday="6"\],[\s\S]*\.weekday-header > \[data-weekday="0"\]\s*\{[^}]*color:\s*#4f6075;[^}]*background-color:\s*#eef3f8;/,
-  );
-  assert.match(css, /\.calendar-day\.is-weekend\s*\{[^}]*background:\s*#f4f7fb;/s);
+  const style = document.createElement("style");
+  style.textContent = css;
+  document.head.append(style);
+  const { container } = renderCalendar();
+
+  const saturdayHeader = requireElement<HTMLElement>(container, '.weekday-header > [data-weekday="6"]');
+  const monday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]');
+  const saturday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-08"]');
+  const sunday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-16"]');
+  const outsideSaturday = requireElement<HTMLElement>(container, '[data-date-key="2026-07-25"]');
+
+  assert.equal(getComputedStyle(saturdayHeader).backgroundColor, "rgb(238, 243, 248)");
+  assert.equal(getComputedStyle(saturdayHeader).color, "rgb(79, 96, 117)");
+  assert.equal(getComputedStyle(monday).backgroundColor, "rgb(255, 255, 255)");
+  assert.equal(getComputedStyle(saturday).backgroundColor, "rgb(244, 247, 251)");
+  assert.equal(getComputedStyle(sunday).backgroundColor, "rgb(244, 247, 251)");
+  assert.equal(getComputedStyle(outsideSaturday).backgroundColor, "rgb(241, 245, 249)");
   assert.match(css, /\.calendar-day\.is-weekend:hover\s*\{[^}]*background:\s*#edf3f9;/s);
 });
 

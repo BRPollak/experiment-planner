@@ -738,6 +738,14 @@ select:focus-visible,
   background: #f8fafc;
 }
 
+.calendar-day.is-outside-month.is-weekend {
+  background: #f1f5f9;
+}
+
+.calendar-day.is-outside-month.is-weekend:hover {
+  background: #eaf0f6;
+}
+
 .calendar-day.is-outside-month .day-number,
 .calendar-day.is-outside-month .calendar-task {
   opacity: 0.58;
