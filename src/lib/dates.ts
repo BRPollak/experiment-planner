@@ -12,17 +12,17 @@ export interface CalendarRange {
 }
 
 export const WEEKDAYS = [
-  "Saturday",
   "Sunday",
   "Monday",
   "Tuesday",
   "Wednesday",
   "Thursday",
   "Friday",
+  "Saturday",
 ] as const;
 
-/** JavaScript weekday numbers in chronological Saturday-through-Friday order. */
-export const WEEKDAY_ORDER = [6, 0, 1, 2, 3, 4, 5] as const;
+/** JavaScript weekday numbers in chronological Sunday-through-Saturday order. */
+export const WEEKDAY_ORDER = [0, 1, 2, 3, 4, 5, 6] as const;
 
 function addLocalDays(date: Date, count: number): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + count);
@@ -43,7 +43,7 @@ export function fromDateKey(value: string): Date {
 export function getCalendarRange(month: Date): CalendarRange {
   const firstOfMonth = new Date(month.getFullYear(), month.getMonth(), 1);
   const lastOfMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-  const leadingDayCount = (firstOfMonth.getDay() + 1) % 7;
+  const leadingDayCount = firstOfMonth.getDay();
   const weekCount = Math.ceil((leadingDayCount + lastOfMonth.getDate()) / 7);
   const firstVisible = addLocalDays(firstOfMonth, -leadingDayCount);
   const days = Array.from({ length: weekCount * 7 }, (_, index) => {

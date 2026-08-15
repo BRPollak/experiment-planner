@@ -107,14 +107,13 @@ export function MonthCalendar({
       return;
     }
 
-    const columnIndex = visualIndex % 7;
-    let offset: number | undefined;
+    let offset: number;
     switch (event.key) {
       case "ArrowLeft":
-        offset = columnIndex > 0 ? -1 : undefined;
+        offset = -1;
         break;
       case "ArrowRight":
-        offset = columnIndex < 6 ? 1 : undefined;
+        offset = 1;
         break;
       case "ArrowUp":
         offset = -7;
@@ -126,7 +125,6 @@ export function MonthCalendar({
         return;
     }
     event.preventDefault();
-    if (offset === undefined) return;
 
     const nextDay = range.days[visualIndex + offset];
     if (!nextDay) return;
