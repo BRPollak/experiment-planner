@@ -674,6 +674,12 @@ select:focus-visible,
   text-transform: none;
 }
 
+.weekday-header > [data-weekday="6"],
+.weekday-header > [data-weekday="0"] {
+  color: #4f6075;
+  background-color: #eef3f8;
+}
+
 .weekday-header > div:last-child {
   border-right: 0;
 }
@@ -710,16 +716,16 @@ select:focus-visible,
   border-bottom: 0;
 }
 
-.calendar-day:hover {
+.calendar-day:where(:hover) {
   background: #fbfcfe;
 }
 
-.calendar-day.is-weekend {
-  background: #fcfdff;
+.calendar-day:where(.is-weekend) {
+  background: #f4f7fb;
 }
 
-.calendar-day.is-weekend:hover {
-  background: #f8fbff;
+.calendar-day:where(.is-weekend:hover) {
+  background: #edf3f9;
 }
 
 .calendar-day:focus-visible {
@@ -728,8 +734,16 @@ select:focus-visible,
   outline-offset: -2px;
 }
 
-.calendar-day.is-outside-month {
+.calendar-day:where(.is-outside-month) {
   background: #f8fafc;
+}
+
+.calendar-day:where(.is-outside-month.is-weekend) {
+  background: #f1f5f9;
+}
+
+.calendar-day:where(.is-outside-month.is-weekend:hover) {
+  background: #eaf0f6;
 }
 
 .calendar-day.is-outside-month .day-number,
@@ -737,12 +751,12 @@ select:focus-visible,
   opacity: 0.58;
 }
 
-.calendar-day.is-today {
+.calendar-day:where(.is-today) {
   background: #fbfdff;
   box-shadow: inset 0 3px 0 var(--accent);
 }
 
-.calendar-day.is-drop-target {
+.calendar-day:where(.is-drop-target) {
   z-index: 1;
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.52);

@@ -174,6 +174,7 @@ interface CalendarSpies {
 function renderCalendar(
   tasks: Task[] = [],
   movingTaskIds: ReadonlySet<string> = new Set(),
+  month = new Date(2026, 7, 1),
 ): { container: HTMLElement; spies: CalendarSpies } {
   const spies: CalendarSpies = { created: [], edited: [], opened: [] };
   const container = render(
@@ -181,7 +182,7 @@ function renderCalendar(
       experiments={[experimentAlpha, experimentBeta]}
       hasCalendar
       loading={false}
-      month={new Date(2026, 7, 1)}
+      month={month}
       movingTaskIds={movingTaskIds}
       onCreateCalendar={() => undefined}
       onCreateExperiment={() => undefined}
@@ -212,7 +213,7 @@ test("calendar cells and day numbers open the expanded day view", () => {
 
 test("the per-day add button creates for its date without opening the day view", () => {
   const { container, spies } = renderCalendar();
-  const cell = requireElement<HTMLElement>(container, '[data-date-key="2026-07-27"]');
+  const cell = requireElement<HTMLElement>(container, '[data-date-key="2026-08-03"]');
   const addButton = requireElement<HTMLButtonElement>(cell, ".calendar-day__add-task");
 
   act(() => addButton.focus());
@@ -220,7 +221,7 @@ test("the per-day add button creates for its date without opening the day view",
   assert.equal(addButton.tabIndex, 0);
   click(addButton);
 
-  assert.deepEqual(spies.created, ["2026-07-27"]);
+  assert.deepEqual(spies.created, ["2026-08-03"]);
   assert.deepEqual(spies.opened, []);
 });
 
@@ -248,50 +249,128 @@ test("a click originating inside a disabled moving task never activates its day 
   assert.deepEqual(spies.edited, []);
 });
 
-test("arrow keys follow the custom visual grid and child controls do not activate the cell", () => {
+test("arrow keys follow chronology across Sunday-first row boundaries", () => {
   const { container, spies } = renderCalendar();
-  const monday = requireElement<HTMLElement>(container, '[data-date-key="2026-07-27"]');
-  const tuesday = requireElement<HTMLElement>(container, '[data-date-key="2026-07-28"]');
-  const nextMonday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-03"]');
+  const firstSunday = requireElement<HTMLElement>(container, '[data-date-key="2026-07-26"]');
+  const firstMonday = requireElement<HTMLElement>(container, '[data-date-key="2026-07-27"]');
+  const saturday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-01"]');
+  const nextSunday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-02"]');
+  const monday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-03"]');
+  const nextMonday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]');
+  const finalSaturday = requireElement<HTMLElement>(container, '[data-date-key="2026-09-05"]');
 
+  act(() => firstSunday.focus());
+  const firstBoundary = keyDown(firstSunday, "ArrowLeft");
+  assert.equal(firstBoundary.defaultPrevented, true);
+  assert.equal(document.activeElement, firstSunday);
+  keyDown(firstSunday, "ArrowRight");
+  assert.equal(document.activeElement, firstMonday);
+  act(() => saturday.focus());
+  keyDown(saturday, "ArrowRight");
+  assert.equal(document.activeElement, nextSunday);
+  assert.deepEqual(
+    [...container.querySelectorAll<HTMLElement>(".calendar-day")]
+      .filter((node) => node.tabIndex === 0)
+      .map((node) => node.dataset.dateKey),
+    ["2026-08-02"],
+  );
+  keyDown(nextSunday, "ArrowLeft");
+  assert.equal(document.activeElement, saturday);
+  assert.deepEqual(
+    [...container.querySelectorAll<HTMLElement>(".calendar-day")]
+      .filter((node) => node.tabIndex === 0)
+      .map((node) => node.dataset.dateKey),
+    ["2026-08-01"],
+  );
   act(() => monday.focus());
-  keyDown(monday, "ArrowRight");
-  assert.equal(document.activeElement, tuesday);
-  keyDown(tuesday, "ArrowLeft");
-  assert.equal(document.activeElement, monday);
   keyDown(monday, "ArrowDown");
   assert.equal(document.activeElement, nextMonday);
+  keyDown(nextMonday, "ArrowUp");
+  assert.equal(document.activeElement, monday);
+  act(() => finalSaturday.focus());
+  const finalBoundary = keyDown(finalSaturday, "ArrowRight");
+  assert.equal(finalBoundary.defaultPrevented, true);
+  assert.equal(document.activeElement, finalSaturday);
 
   const addButton = requireElement(monday, ".calendar-day__add-task");
   keyDown(addButton, "Enter");
   assert.deepEqual(spies.opened, []);
 });
 
-test("headers, date placement, task lookup, and weekend identity match the custom columns", () => {
+test("headers, dates, tasks, and weekends follow chronological Sunday-first columns", () => {
   const saturdayTask = makeTask("Saturday task", { date: "2026-08-01" });
   const mondayTask = makeTask("Monday task", { date: "2026-07-27" });
   const { container } = renderCalendar([mondayTask, saturdayTask]);
 
   assert.deepEqual(
     [...container.querySelectorAll(".weekday-header > div")].map((node) => node.textContent),
-    ["Saturday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Sunday"],
+    ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+  );
+  assert.deepEqual(
+    [...container.querySelectorAll<HTMLElement>(".weekday-header > div")]
+      .map((node) => node.dataset.weekday),
+    ["0", "1", "2", "3", "4", "5", "6"],
   );
   const firstRow = [...container.querySelectorAll<HTMLElement>(".calendar-day")].slice(0, 7);
   assert.deepEqual(firstRow.map((node) => node.dataset.dateKey), [
-    "2026-08-01",
+    "2026-07-26",
     "2026-07-27",
     "2026-07-28",
     "2026-07-29",
     "2026-07-30",
     "2026-07-31",
-    "2026-08-02",
+    "2026-08-01",
   ]);
-  assert.deepEqual(firstRow.map((node) => node.dataset.weekday), ["6", "1", "2", "3", "4", "5", "0"]);
+  assert.deepEqual(firstRow.map((node) => node.dataset.weekday), ["0", "1", "2", "3", "4", "5", "6"]);
   assert.equal(firstRow[0].classList.contains("is-weekend"), true);
   assert.equal(firstRow[1].classList.contains("is-weekend"), false);
   assert.equal(firstRow[6].classList.contains("is-weekend"), true);
-  assert.match(firstRow[0].textContent ?? "", /Saturday task/);
   assert.match(firstRow[1].textContent ?? "", /Monday task/);
+  assert.match(firstRow[6].textContent ?? "", /Saturday task/);
+
+  const saturday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-01"]');
+  assert.equal(saturday.dataset.weekday, "6");
+  assert.equal(saturday.classList.contains("is-weekend"), true);
+  assert.match(saturday.textContent ?? "", /Saturday task/);
+
+  const august15Index = [...container.querySelectorAll<HTMLElement>(".calendar-day")]
+    .findIndex((node) => node.dataset.dateKey === "2026-08-15");
+  const august15Row = [...container.querySelectorAll<HTMLElement>(".calendar-day")]
+    .slice(august15Index - (august15Index % 7), august15Index - (august15Index % 7) + 7);
+  assert.deepEqual(august15Row.map((node) => node.dataset.dateKey), [
+    "2026-08-09",
+    "2026-08-10",
+    "2026-08-11",
+    "2026-08-12",
+    "2026-08-13",
+    "2026-08-14",
+    "2026-08-15",
+  ]);
+
+  const cells = [...container.querySelectorAll<HTMLElement>(".calendar-day")];
+  assert.equal(cells.filter((node) => node.tabIndex === 0).length, 1);
+  act(() => requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]').focus());
+  assert.equal(cells.filter((node) => node.tabIndex === 0).length, 1);
+  const activeMonday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]');
+  assert.equal(activeMonday.tabIndex, 0);
+  assert.ok(
+    [...container.querySelectorAll<HTMLElement>(".calendar-day, .calendar-day button")]
+      .filter((node) => node.tabIndex === 0 && !(node instanceof HTMLButtonElement && node.disabled))
+      .every((node) => node === activeMonday || activeMonday.contains(node)),
+  );
+  assert.equal(
+    requireElement<HTMLButtonElement>(container, '[data-date-key="2026-08-08"] .day-number').tabIndex,
+    -1,
+  );
+});
+
+test("a non-current month beginning Saturday enters the grid on day one", () => {
+  const { container } = renderCalendar([], new Set(), new Date(2027, 4, 1));
+  const tabStops = [...container.querySelectorAll<HTMLElement>(".calendar-day")]
+    .filter((node) => node.tabIndex === 0);
+
+  assert.equal(tabStops.length, 1);
+  assert.equal(tabStops[0].dataset.dateKey, "2027-05-01");
 });
 
 test("calendar and expanded day view expose the same shared task order", () => {
@@ -329,6 +408,34 @@ test("the add-task control defaults visible for no-hover devices and reveals smo
   assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)/);
   assert.match(css, /\.calendar-day:hover \.calendar-day__add-task,[\s\S]*\.calendar-day:focus-within \.calendar-day__add-task/);
   assert.match(css, /transition:[^;]*opacity[^;]*transform/);
+});
+
+test("weekend headers and cells use the subtle planning treatment", () => {
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const style = document.createElement("style");
+  style.textContent = css;
+  document.head.append(style);
+  const { container } = renderCalendar([], new Set(), new Date(2024, 8, 1));
+
+  const sundayHeader = requireElement<HTMLElement>(container, '.weekday-header > [data-weekday="0"]');
+  const saturdayHeader = requireElement<HTMLElement>(container, '.weekday-header > [data-weekday="6"]');
+  const monday = requireElement<HTMLElement>(container, '[data-date-key="2024-09-02"]');
+  const saturday = requireElement<HTMLElement>(container, '[data-date-key="2024-09-07"]');
+  const sunday = requireElement<HTMLElement>(container, '[data-date-key="2024-09-08"]');
+  const outsideSaturday = requireElement<HTMLElement>(container, '[data-date-key="2024-10-05"]');
+
+  assert.equal(getComputedStyle(sundayHeader).backgroundColor, "rgb(238, 243, 248)");
+  assert.equal(getComputedStyle(sundayHeader).color, "rgb(79, 96, 117)");
+  assert.equal(getComputedStyle(saturdayHeader).backgroundColor, "rgb(238, 243, 248)");
+  assert.equal(getComputedStyle(saturdayHeader).color, "rgb(79, 96, 117)");
+  assert.equal(getComputedStyle(monday).backgroundColor, "rgb(255, 255, 255)");
+  assert.equal(getComputedStyle(saturday).backgroundColor, "rgb(244, 247, 251)");
+  assert.equal(getComputedStyle(sunday).backgroundColor, "rgb(244, 247, 251)");
+  assert.equal(getComputedStyle(outsideSaturday).backgroundColor, "rgb(241, 245, 249)");
+  outsideSaturday.classList.add("is-today");
+  assert.equal(getComputedStyle(outsideSaturday).backgroundColor, "rgb(251, 253, 255)");
+  assert.match(css, /\.calendar-day:where\(\.is-weekend:hover\)\s*\{[^}]*background:\s*#edf3f9;/s);
+  assert.match(css, /\.calendar-day:where\(\.is-drop-target\)\s*\{[^}]*background:\s*var\(--accent-soft\);/s);
 });
 
 test("day view groups in first-task order and renders time plus only nonblank descriptions", () => {

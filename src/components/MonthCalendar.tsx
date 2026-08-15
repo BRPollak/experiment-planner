@@ -8,7 +8,14 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { Experiment, Task } from "../../shared/models";
-import { getCalendarRange, monthHeading, shiftMonth, toDateKey, WEEKDAYS } from "../lib/dates";
+import {
+  getCalendarRange,
+  monthHeading,
+  shiftMonth,
+  toDateKey,
+  WEEKDAYS,
+  WEEKDAY_ORDER,
+} from "../lib/dates";
 import { formatTaskTime, sortTasks } from "../lib/tasks";
 import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, NotesIcon, PlusIcon } from "./Icons";
 
@@ -51,6 +58,7 @@ export function MonthCalendar({
   const todayKey = toDateKey(new Date());
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [focusedDateKey, setFocusedDateKey] = useState<string | null>(null);
   const dayRefs = useRef(new Map<string, HTMLDivElement>());
 
   const experimentById = useMemo(
@@ -78,6 +86,14 @@ export function MonthCalendar({
   const suggestedTaskDate = isCurrentMonth
     ? todayKey
     : toDateKey(new Date(month.getFullYear(), month.getMonth(), 1));
+  const focusedDateIsVisible = focusedDateKey
+    ? range.days.some((day) => day.dateKey === focusedDateKey)
+    : false;
+  const gridTabStopDate = focusedDateIsVisible
+    ? focusedDateKey
+    : isCurrentMonth
+      ? todayKey
+      : toDateKey(new Date(month.getFullYear(), month.getMonth(), 1));
 
   const handleDayKeyDown = (
     event: KeyboardEvent<HTMLDivElement>,
@@ -91,17 +107,27 @@ export function MonthCalendar({
       return;
     }
 
-    const offset = {
-      ArrowLeft: -1,
-      ArrowRight: 1,
-      ArrowUp: -7,
-      ArrowDown: 7,
-    }[event.key];
-    if (offset === undefined) return;
+    let offset: number;
+    switch (event.key) {
+      case "ArrowLeft":
+        offset = -1;
+        break;
+      case "ArrowRight":
+        offset = 1;
+        break;
+      case "ArrowUp":
+        offset = -7;
+        break;
+      case "ArrowDown":
+        offset = 7;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
 
     const nextDay = range.days[visualIndex + offset];
     if (!nextDay) return;
-    event.preventDefault();
     dayRefs.current.get(nextDay.dateKey)?.focus();
   };
 
@@ -156,7 +182,11 @@ export function MonthCalendar({
       <div aria-busy={loading} className="calendar-body">
         {loading ? <div className="calendar-loading-bar" /> : null}
         <div className="weekday-header" role="row">
-          {WEEKDAYS.map((weekday) => <div key={weekday} role="columnheader">{weekday}</div>)}
+          {WEEKDAYS.map((weekday, index) => (
+            <div data-weekday={WEEKDAY_ORDER[index]} key={weekday} role="columnheader">
+              {weekday}
+            </div>
+          ))}
         </div>
         <div
           className="calendar-grid"
@@ -168,6 +198,7 @@ export function MonthCalendar({
             const isToday = day.dateKey === todayKey;
             const isDropTarget = dragOverDate === day.dateKey;
             const isWeekend = day.date.getDay() === 0 || day.date.getDay() === 6;
+            const isGridTabStop = day.dateKey === gridTabStopDate;
             const label = new Intl.DateTimeFormat(undefined, {
               weekday: "long",
               month: "long",
@@ -196,13 +227,14 @@ export function MonthCalendar({
                   }
                 }}
                 onDrop={(event) => handleDrop(event, day.dateKey)}
+                onFocus={() => setFocusedDateKey(day.dateKey)}
                 onKeyDown={(event) => handleDayKeyDown(event, day.dateKey, visualIndex)}
                 ref={(element) => {
                   if (element) dayRefs.current.set(day.dateKey, element);
                   else dayRefs.current.delete(day.dateKey);
                 }}
                 role="gridcell"
-                tabIndex={0}
+                tabIndex={isGridTabStop ? 0 : -1}
               >
                 <div className="calendar-day__header">
                   <button
@@ -213,6 +245,7 @@ export function MonthCalendar({
                       event.stopPropagation();
                       onOpenDay(day.dateKey);
                     }}
+                    tabIndex={isGridTabStop ? 0 : -1}
                     type="button"
                   >
                     {day.date.getDate()}
@@ -226,6 +259,7 @@ export function MonthCalendar({
                         event.stopPropagation();
                         onCreateTask(day.dateKey);
                       }}
+                      tabIndex={isGridTabStop ? 0 : -1}
                       title="Add task"
                       type="button"
                     >
@@ -268,6 +302,7 @@ export function MonthCalendar({
                           event.dataTransfer.setData("text/plain", task.id);
                         }}
                         style={taskStyle}
+                        tabIndex={isGridTabStop ? 0 : -1}
                         title={`${displayTime ? `${displayTime} · ` : ""}${task.name} · ${experiment?.name ?? "Unknown experiment"}`}
                         type="button"
                       >

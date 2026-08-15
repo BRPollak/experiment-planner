@@ -12,20 +12,21 @@ export interface CalendarRange {
 }
 
 export const WEEKDAYS = [
-  "Saturday",
+  "Sunday",
   "Monday",
   "Tuesday",
   "Wednesday",
   "Thursday",
   "Friday",
-  "Sunday",
+  "Saturday",
 ] as const;
 
-/** JavaScript weekday numbers in the calendar's custom left-to-right order. */
-export const WEEKDAY_ORDER = [6, 1, 2, 3, 4, 5, 0] as const;
+/** JavaScript weekday numbers in chronological Sunday-through-Saturday order. */
+export const WEEKDAY_ORDER = [0, 1, 2, 3, 4, 5, 6] as const;
 
-/** Offsets within a chronological Monday-through-Sunday week. */
-const WEEKDAY_OFFSETS = [5, 0, 1, 2, 3, 4, 6] as const;
+function addLocalDays(date: Date, count: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + count);
+}
 
 export function toDateKey(date: Date): string {
   const year = date.getFullYear();
@@ -42,21 +43,11 @@ export function fromDateKey(value: string): Date {
 export function getCalendarRange(month: Date): CalendarRange {
   const firstOfMonth = new Date(month.getFullYear(), month.getMonth(), 1);
   const lastOfMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-  const mondayOffset = (firstOfMonth.getDay() + 6) % 7;
-  const totalSlots = mondayOffset + lastOfMonth.getDate();
-  const weekCount = Math.ceil(totalSlots / 7);
-  const firstVisible = new Date(
-    firstOfMonth.getFullYear(),
-    firstOfMonth.getMonth(),
-    firstOfMonth.getDate() - mondayOffset,
-  );
-
-  const chronologicalDays = Array.from({ length: weekCount * 7 }, (_, index) => {
-    const date = new Date(
-      firstVisible.getFullYear(),
-      firstVisible.getMonth(),
-      firstVisible.getDate() + index,
-    );
+  const leadingDayCount = firstOfMonth.getDay();
+  const weekCount = Math.ceil((leadingDayCount + lastOfMonth.getDate()) / 7);
+  const firstVisible = addLocalDays(firstOfMonth, -leadingDayCount);
+  const days = Array.from({ length: weekCount * 7 }, (_, index) => {
+    const date = addLocalDays(firstVisible, index);
     return {
       date,
       dateKey: toDateKey(date),
@@ -65,18 +56,10 @@ export function getCalendarRange(month: Date): CalendarRange {
     };
   });
 
-  const days = Array.from({ length: weekCount }, (_, weekIndex) => {
-    const weekStart = weekIndex * 7;
-    return WEEKDAY_OFFSETS.map((offset) => chronologicalDays[weekStart + offset]);
-  }).flat();
-
   return {
     days,
-    // Loading still spans the complete chronological Monday-to-Sunday range.
-    // The display's first cell is Saturday, so deriving these from `days`
-    // would otherwise omit Monday through Friday from the first API query.
-    start: chronologicalDays[0].dateKey,
-    end: chronologicalDays[chronologicalDays.length - 1].dateKey,
+    start: days[0].dateKey,
+    end: days[days.length - 1].dateKey,
     weekCount,
   };
 }
