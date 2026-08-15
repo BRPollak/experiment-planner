@@ -12,20 +12,17 @@ export interface CalendarRange {
 }
 
 export const WEEKDAYS = [
-  "Saturday",
   "Monday",
   "Tuesday",
   "Wednesday",
   "Thursday",
   "Friday",
+  "Saturday",
   "Sunday",
 ] as const;
 
-/** JavaScript weekday numbers in the calendar's custom left-to-right order. */
-export const WEEKDAY_ORDER = [6, 1, 2, 3, 4, 5, 0] as const;
-
-/** Offsets within a chronological Monday-through-Sunday week. */
-const WEEKDAY_OFFSETS = [5, 0, 1, 2, 3, 4, 6] as const;
+/** JavaScript weekday numbers in chronological Monday-through-Sunday order. */
+export const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
 export function toDateKey(date: Date): string {
   const year = date.getFullYear();
@@ -65,16 +62,8 @@ export function getCalendarRange(month: Date): CalendarRange {
     };
   });
 
-  const days = Array.from({ length: weekCount }, (_, weekIndex) => {
-    const weekStart = weekIndex * 7;
-    return WEEKDAY_OFFSETS.map((offset) => chronologicalDays[weekStart + offset]);
-  }).flat();
-
   return {
-    days,
-    // Loading still spans the complete chronological Monday-to-Sunday range.
-    // The display's first cell is Saturday, so deriving these from `days`
-    // would otherwise omit Monday through Friday from the first API query.
+    days: chronologicalDays,
     start: chronologicalDays[0].dateKey,
     end: chronologicalDays[chronologicalDays.length - 1].dateKey,
     weekCount,

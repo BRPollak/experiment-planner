@@ -19,99 +19,108 @@ function rows(days: CalendarDay[]): CalendarDay[][] {
   ));
 }
 
-function assertCustomWeekRows(month: Date): void {
+function assertChronologicalWeekRows(month: Date): void {
   const range = getCalendarRange(month);
   assert.equal(range.days.length, range.weekCount * 7);
   assert.equal(new Set(range.days.map(({ dateKey }) => dateKey)).size, range.days.length);
 
   rows(range.days).forEach((week) => {
     assert.deepEqual(week.map(({ date }) => date.getDay()), [...WEEKDAY_ORDER]);
-    const monday = week[1].date;
-    const offsetsFromMonday = [5, 0, 1, 2, 3, 4, 6];
     assert.deepEqual(
       week.map(({ dateKey }) => dateKey),
-      offsetsFromMonday.map((offset) => toDateKey(addLocalDays(monday, offset))),
+      Array.from({ length: 7 }, (_, offset) => toDateKey(addLocalDays(week[0].date, offset))),
     );
   });
 
-  const chronologicalKeys = range.days.map(({ dateKey }) => dateKey).sort();
-  assert.equal(range.start, chronologicalKeys[0]);
-  assert.equal(range.end, chronologicalKeys[chronologicalKeys.length - 1]);
+  range.days.slice(1).forEach((day, index) => {
+    assert.equal(day.dateKey, toDateKey(addLocalDays(range.days[index].date, 1)));
+  });
+  assert.equal(range.start, range.days[0].dateKey);
+  assert.equal(range.end, range.days[range.days.length - 1].dateKey);
 }
 
-test("weekday headings use the exact custom labels", () => {
+test("weekday headings run chronologically from Monday through Sunday", () => {
   assert.deepEqual([...WEEKDAYS], [
-    "Saturday",
     "Monday",
     "Tuesday",
     "Wednesday",
     "Thursday",
     "Friday",
+    "Saturday",
     "Sunday",
   ]);
 });
 
-test("a month beginning Saturday places dates in custom columns without shortening its API range", () => {
+test("August 2026 stays in ascending order across the reported Saturday-to-Monday defect", () => {
   const range = getCalendarRange(new Date(2026, 7, 1));
 
   assert.equal(range.start, "2026-07-27");
   assert.equal(range.end, "2026-09-06");
   assert.equal(range.weekCount, 6);
   assert.deepEqual(range.days.slice(0, 7).map(({ dateKey }) => dateKey), [
-    "2026-08-01",
     "2026-07-27",
     "2026-07-28",
     "2026-07-29",
     "2026-07-30",
     "2026-07-31",
+    "2026-08-01",
     "2026-08-02",
   ]);
+  assert.deepEqual(range.days.slice(14, 21).map(({ dateKey }) => dateKey), [
+    "2026-08-10",
+    "2026-08-11",
+    "2026-08-12",
+    "2026-08-13",
+    "2026-08-14",
+    "2026-08-15",
+    "2026-08-16",
+  ]);
   assert.deepEqual(range.days.slice(-7).map(({ dateKey }) => dateKey), [
-    "2026-09-05",
     "2026-08-31",
     "2026-09-01",
     "2026-09-02",
     "2026-09-03",
     "2026-09-04",
+    "2026-09-05",
     "2026-09-06",
   ]);
-  assertCustomWeekRows(new Date(2026, 7, 1));
+  assertChronologicalWeekRows(new Date(2026, 7, 1));
 });
 
-test("a month beginning Sunday keeps that Sunday in the preceding Monday-based week", () => {
+test("a month beginning Sunday keeps that Sunday at the end of the preceding Monday-based week", () => {
   const range = getCalendarRange(new Date(2024, 8, 1));
 
   assert.equal(range.start, "2024-08-26");
   assert.equal(range.end, "2024-10-06");
   assert.deepEqual(range.days.slice(0, 7).map(({ dateKey }) => dateKey), [
-    "2024-08-31",
     "2024-08-26",
     "2024-08-27",
     "2024-08-28",
     "2024-08-29",
     "2024-08-30",
+    "2024-08-31",
     "2024-09-01",
   ]);
   assert.equal(range.days[6].isCurrentMonth, true);
-  assertCustomWeekRows(new Date(2024, 8, 1));
+  assertChronologicalWeekRows(new Date(2024, 8, 1));
 });
 
-test("a four-week month still uses complete custom Monday-through-Sunday rows", () => {
+test("a four-week month still uses complete chronological Monday-through-Sunday rows", () => {
   const range = getCalendarRange(new Date(2021, 1, 1));
 
   assert.equal(range.weekCount, 4);
   assert.equal(range.start, "2021-02-01");
   assert.equal(range.end, "2021-02-28");
   assert.deepEqual(range.days.slice(0, 7).map(({ dateKey }) => dateKey), [
-    "2021-02-06",
     "2021-02-01",
     "2021-02-02",
     "2021-02-03",
     "2021-02-04",
     "2021-02-05",
+    "2021-02-06",
     "2021-02-07",
   ]);
-  assertCustomWeekRows(new Date(2021, 1, 1));
+  assertChronologicalWeekRows(new Date(2021, 1, 1));
 });
 
 test("December maps correctly across the year boundary", () => {
@@ -120,24 +129,24 @@ test("December maps correctly across the year boundary", () => {
   assert.equal(range.start, "2025-12-01");
   assert.equal(range.end, "2026-01-04");
   assert.deepEqual(range.days.slice(-7).map(({ dateKey }) => dateKey), [
-    "2026-01-03",
     "2025-12-29",
     "2025-12-30",
     "2025-12-31",
     "2026-01-01",
     "2026-01-02",
+    "2026-01-03",
     "2026-01-04",
   ]);
   assert.deepEqual(range.days.slice(-7).map(({ isCurrentMonth }) => isCurrentMonth), [
+    true,
+    true,
+    true,
     false,
-    true,
-    true,
-    true,
     false,
     false,
     false,
   ]);
-  assertCustomWeekRows(new Date(2025, 11, 1));
+  assertChronologicalWeekRows(new Date(2025, 11, 1));
 });
 
 test("leap-year February includes February 29 beneath Thursday", () => {
@@ -147,10 +156,10 @@ test("leap-year February includes February 29 beneath Thursday", () => {
   assert.equal(range.start, "2024-01-29");
   assert.equal(range.end, "2024-03-03");
   assert.notEqual(leapDayIndex, -1);
-  assert.equal(leapDayIndex % 7, 4);
+  assert.equal(leapDayIndex % 7, 3);
   assert.equal(range.days[leapDayIndex].date.getDay(), 4);
   assert.equal(range.days[leapDayIndex].isCurrentMonth, true);
-  assertCustomWeekRows(new Date(2024, 1, 1));
+  assertChronologicalWeekRows(new Date(2024, 1, 1));
 });
 
 test("months beginning and ending on different weekdays retain weekday identity", () => {
@@ -177,6 +186,6 @@ test("months beginning and ending on different weekdays retain weekday identity"
     assert.equal(last?.date.getDay(), lastOfMonth.getDay());
     assert.equal(range.days.indexOf(first!) % 7, weekdayColumns.indexOf(first!.date.getDay()));
     assert.equal(range.days.indexOf(last!) % 7, weekdayColumns.indexOf(last!.date.getDay()));
-    assertCustomWeekRows(month);
+    assertChronologicalWeekRows(month);
   });
 });
