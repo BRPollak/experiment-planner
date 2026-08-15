@@ -1,8 +1,22 @@
 {
   "name": "experiment-planner",
   "productName": "Experiment Planner",
+  "description": "A local-first experiment and task planner built around a full-screen monthly calendar.",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "author": {
+    "name": "BRPollak",
+    "url": "https://github.com/BRPollak"
+  },
+  "license": "UNLICENSED",
+  "homepage": "https://github.com/BRPollak/experiment-planner#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BRPollak/experiment-planner.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BRPollak/experiment-planner/issues"
+  },
   "type": "module",
   "main": "dist-electron/main.mjs",
   "scripts": {
@@ -17,7 +31,7 @@
     "desktop:pack": "npm run desktop:prepare && electron-builder --mac dir --arm64 --publish never",
     "desktop:dist": "npm run desktop:prepare && electron-builder --mac dmg --arm64 --publish never",
     "start": "NODE_ENV=production tsx server/index.ts",
-    "test": "node --import tsx --test server/*.test.ts electron/*.test.ts src/lib/*.test.ts src/components/*.test.tsx",
+    "test": "node --import tsx --test server/*.test.ts electron/*.test.ts electron/*.test.mjs src/lib/*.test.ts src/components/*.test.tsx",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
@@ -54,12 +68,28 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "!dist-electron/**/*.map",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/electron/dist/LICENSE",
+        "to": "LICENSE.electron.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "LICENSES.chromium.html"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "build/icon.svg",
       "identity": null,
+      "minimumSystemVersion": "12.0",
       "extendInfo": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,

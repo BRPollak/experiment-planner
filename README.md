@@ -8,7 +8,7 @@ Use separate calendars for different projects, group work into color-coded exper
 
 Experiment Planner currently supports Apple silicon Macs running macOS 12 or newer.
 
-1. Open the repository's **Releases** page.
+1. Open the [latest Experiment Planner release](https://github.com/BRPollak/experiment-planner/releases/latest).
 2. Download `Experiment Planner-<version>-arm64.dmg` from the latest release.
 3. Open the downloaded DMG.
 4. Drag **Experiment Planner** into the **Applications** folder.
@@ -38,7 +38,9 @@ Desktop data is stored at:
 ~/Library/Application Support/Experiment Planner/experiment-planner.sqlite
 ```
 
-Local databases, tasks, calendars, build output, and installation packages are excluded from this repository.
+Before changing the database format, the app creates and verifies a restorable backup beside the database. It keeps the three newest migration backups. See [Data recovery](docs/data-recovery.md) if an upgrade cannot start.
+
+Local databases, tasks, calendars, database backups, build output, and installation packages are excluded from this repository.
 
 ## Run from source
 
