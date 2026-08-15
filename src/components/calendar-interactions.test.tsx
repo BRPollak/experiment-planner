@@ -174,6 +174,7 @@ interface CalendarSpies {
 function renderCalendar(
   tasks: Task[] = [],
   movingTaskIds: ReadonlySet<string> = new Set(),
+  month = new Date(2026, 7, 1),
 ): { container: HTMLElement; spies: CalendarSpies } {
   const spies: CalendarSpies = { created: [], edited: [], opened: [] };
   const container = render(
@@ -181,7 +182,7 @@ function renderCalendar(
       experiments={[experimentAlpha, experimentBeta]}
       hasCalendar
       loading={false}
-      month={new Date(2026, 7, 1)}
+      month={month}
       movingTaskIds={movingTaskIds}
       onCreateCalendar={() => undefined}
       onCreateExperiment={() => undefined}
@@ -336,7 +337,26 @@ test("headers, date placement, task lookup, and weekend identity match weekend-b
   assert.equal(cells.filter((node) => node.tabIndex === 0).length, 1);
   act(() => requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]').focus());
   assert.equal(cells.filter((node) => node.tabIndex === 0).length, 1);
-  assert.equal(requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]').tabIndex, 0);
+  const activeMonday = requireElement<HTMLElement>(container, '[data-date-key="2026-08-10"]');
+  assert.equal(activeMonday.tabIndex, 0);
+  assert.ok(
+    [...container.querySelectorAll<HTMLElement>(".calendar-day, .calendar-day button")]
+      .filter((node) => node.tabIndex === 0 && !(node instanceof HTMLButtonElement && node.disabled))
+      .every((node) => node === activeMonday || activeMonday.contains(node)),
+  );
+  assert.equal(
+    requireElement<HTMLButtonElement>(container, '[data-date-key="2026-08-08"] .day-number').tabIndex,
+    -1,
+  );
+});
+
+test("a non-current month beginning Saturday enters the grid on day one", () => {
+  const { container } = renderCalendar([], new Set(), new Date(2027, 4, 1));
+  const tabStops = [...container.querySelectorAll<HTMLElement>(".calendar-day")]
+    .filter((node) => node.tabIndex === 0);
+
+  assert.equal(tabStops.length, 1);
+  assert.equal(tabStops[0].dataset.dateKey, "2027-05-01");
 });
 
 test("calendar and expanded day view expose the same shared task order", () => {
@@ -395,7 +415,10 @@ test("weekend headers and cells use the subtle planning treatment", () => {
   assert.equal(getComputedStyle(saturday).backgroundColor, "rgb(244, 247, 251)");
   assert.equal(getComputedStyle(sunday).backgroundColor, "rgb(244, 247, 251)");
   assert.equal(getComputedStyle(outsideSaturday).backgroundColor, "rgb(241, 245, 249)");
-  assert.match(css, /\.calendar-day\.is-weekend:hover\s*\{[^}]*background:\s*#edf3f9;/s);
+  outsideSaturday.classList.add("is-today");
+  assert.equal(getComputedStyle(outsideSaturday).backgroundColor, "rgb(251, 253, 255)");
+  assert.match(css, /\.calendar-day:where\(\.is-weekend:hover\)\s*\{[^}]*background:\s*#edf3f9;/s);
+  assert.match(css, /\.calendar-day:where\(\.is-drop-target\)\s*\{[^}]*background:\s*var\(--accent-soft\);/s);
 });
 
 test("day view groups in first-task order and renders time plus only nonblank descriptions", () => {

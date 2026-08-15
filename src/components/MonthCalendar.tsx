@@ -93,7 +93,7 @@ export function MonthCalendar({
     ? focusedDateKey
     : isCurrentMonth
       ? todayKey
-      : range.days.find((day) => day.isCurrentMonth)?.dateKey ?? range.days[0].dateKey;
+      : toDateKey(new Date(month.getFullYear(), month.getMonth(), 1));
 
   const handleDayKeyDown = (
     event: KeyboardEvent<HTMLDivElement>,
@@ -200,6 +200,7 @@ export function MonthCalendar({
             const isToday = day.dateKey === todayKey;
             const isDropTarget = dragOverDate === day.dateKey;
             const isWeekend = day.date.getDay() === 0 || day.date.getDay() === 6;
+            const isGridTabStop = day.dateKey === gridTabStopDate;
             const label = new Intl.DateTimeFormat(undefined, {
               weekday: "long",
               month: "long",
@@ -235,7 +236,7 @@ export function MonthCalendar({
                   else dayRefs.current.delete(day.dateKey);
                 }}
                 role="gridcell"
-                tabIndex={day.dateKey === gridTabStopDate ? 0 : -1}
+                tabIndex={isGridTabStop ? 0 : -1}
               >
                 <div className="calendar-day__header">
                   <button
@@ -246,6 +247,7 @@ export function MonthCalendar({
                       event.stopPropagation();
                       onOpenDay(day.dateKey);
                     }}
+                    tabIndex={isGridTabStop ? 0 : -1}
                     type="button"
                   >
                     {day.date.getDate()}
@@ -259,6 +261,7 @@ export function MonthCalendar({
                         event.stopPropagation();
                         onCreateTask(day.dateKey);
                       }}
+                      tabIndex={isGridTabStop ? 0 : -1}
                       title="Add task"
                       type="button"
                     >
@@ -301,6 +304,7 @@ export function MonthCalendar({
                           event.dataTransfer.setData("text/plain", task.id);
                         }}
                         style={taskStyle}
+                        tabIndex={isGridTabStop ? 0 : -1}
                         title={`${displayTime ? `${displayTime} · ` : ""}${task.name} · ${experiment?.name ?? "Unknown experiment"}`}
                         type="button"
                       >
