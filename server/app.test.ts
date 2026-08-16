@@ -49,7 +49,7 @@ async function readError(response: Response): Promise<ApiErrorBody> {
   return (await response.json()) as ApiErrorBody;
 }
 
-test("experiment deletion rejects missing, invalid, and stale count confirmations", async () => {
+test("experiment deletion requires archiving before applying cascade count guards", async () => {
   const application = await startTestApplication();
   try {
     const calendar = application.database.createCalendar({ name: "API calendar" });
@@ -63,6 +63,30 @@ test("experiment deletion rejects missing, invalid, and stale count confirmation
       date: "2026-08-14",
       experimentId: experiment.id,
     });
+
+    const activeDeletion = await fetch(
+      `${application.baseUrl}/api/experiments/${experiment.id}?confirmCascade=true&expectedTaskCount=1`,
+      { method: "DELETE" },
+    );
+    assert.equal(activeDeletion.status, 409);
+    const activeError = await readError(activeDeletion);
+    assert.equal(activeError.code, "EXPERIMENT_NOT_ARCHIVED");
+    assert.deepEqual(activeError.details, { archiveRequired: true });
+    assert.ok(application.database.getExperiment(experiment.id));
+
+    const archiveResponse = await fetch(
+      `${application.baseUrl}/api/experiments/${experiment.id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      },
+    );
+    assert.equal(archiveResponse.status, 200);
+    assert.equal(
+      ((await archiveResponse.json()) as { archived: boolean }).archived,
+      true,
+    );
 
     const initial = await fetch(
       `${application.baseUrl}/api/experiments/${experiment.id}`,
@@ -124,7 +148,7 @@ test("experiment deletion rejects missing, invalid, and stale count confirmation
   }
 });
 
-test("calendar deletion atomically checks both displayed content counts", async () => {
+test("calendar deletion requires archiving before atomically checking content counts", async () => {
   const application = await startTestApplication();
   try {
     const calendar = application.database.createCalendar({ name: "Protected calendar" });
@@ -138,6 +162,35 @@ test("calendar deletion atomically checks both displayed content counts", async 
       date: "2026-08-14",
       experimentId: experiment.id,
     });
+
+    const activeDeletion = await fetch(
+      `${application.baseUrl}/api/calendars/${calendar.id}?confirmCascade=true&expectedExperimentCount=1&expectedTaskCount=1`,
+      { method: "DELETE" },
+    );
+    assert.equal(activeDeletion.status, 409);
+    const activeError = await readError(activeDeletion);
+    assert.equal(activeError.code, "CALENDAR_NOT_ARCHIVED");
+    assert.deepEqual(activeError.details, { archiveRequired: true });
+    assert.ok(application.database.getCalendar(calendar.id));
+
+    const archiveResponse = await fetch(
+      `${application.baseUrl}/api/calendars/${calendar.id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      },
+    );
+    assert.equal(archiveResponse.status, 200);
+    assert.equal(
+      ((await archiveResponse.json()) as { archived: boolean }).archived,
+      true,
+    );
+    assert.equal(
+      application.database.getExperiment(experiment.id)?.archived,
+      false,
+      "archiving a calendar must not cascade archive state to its experiments",
+    );
 
     const initial = await fetch(
       `${application.baseUrl}/api/calendars/${calendar.id}`,
@@ -179,11 +232,95 @@ test("calendar deletion atomically checks both displayed content counts", async 
     assert.equal(application.database.getCalendar(calendar.id), null);
 
     const empty = application.database.createCalendar({ name: "Empty calendar" });
-    const backwardsCompatible = await fetch(
+    const activeEmpty = await fetch(
       `${application.baseUrl}/api/calendars/${empty.id}`,
       { method: "DELETE" },
     );
-    assert.equal(backwardsCompatible.status, 204);
+    assert.equal(activeEmpty.status, 409);
+    const activeEmptyError = await readError(activeEmpty);
+    assert.equal(activeEmptyError.code, "CALENDAR_NOT_ARCHIVED");
+    assert.deepEqual(activeEmptyError.details, { archiveRequired: true });
+
+    application.database.updateCalendar(empty.id, { archived: true });
+    const archivedEmpty = await fetch(
+      `${application.baseUrl}/api/calendars/${empty.id}`,
+      { method: "DELETE" },
+    );
+    assert.equal(archivedEmpty.status, 204);
+  } finally {
+    await stopTestApplication(application);
+  }
+});
+
+test("calendar and experiment PATCH requests persist, reverse, and validate archive state", async () => {
+  const application = await startTestApplication();
+  try {
+    const calendar = application.database.createCalendar({ name: "Archive API" });
+    const experiment = application.database.createExperiment({
+      name: "Archive through PATCH",
+      color: "#123456",
+      calendarId: calendar.id,
+    });
+    const headers = { "Content-Type": "application/json" };
+
+    for (const [path, id] of [
+      ["calendars", calendar.id],
+      ["experiments", experiment.id],
+    ] as const) {
+      const archiveResponse = await fetch(
+        `${application.baseUrl}/api/${path}/${id}`,
+        {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ archived: true }),
+        },
+      );
+      assert.equal(archiveResponse.status, 200);
+      assert.equal(
+        ((await archiveResponse.json()) as { archived: boolean }).archived,
+        true,
+      );
+
+      const unarchiveResponse = await fetch(
+        `${application.baseUrl}/api/${path}/${id}`,
+        {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ archived: false }),
+        },
+      );
+      assert.equal(unarchiveResponse.status, 200);
+      assert.equal(
+        ((await unarchiveResponse.json()) as { archived: boolean }).archived,
+        false,
+      );
+    }
+
+    assert.equal(application.database.getCalendar(calendar.id)?.archived, false);
+    assert.equal(application.database.getExperiment(experiment.id)?.archived, false);
+
+    for (const [path, id] of [
+      ["calendars", calendar.id],
+      ["experiments", experiment.id],
+    ] as const) {
+      for (const invalidArchived of [null, 0, "true", {}]) {
+        const invalidResponse = await fetch(
+          `${application.baseUrl}/api/${path}/${id}`,
+          {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ archived: invalidArchived }),
+          },
+        );
+        assert.equal(invalidResponse.status, 400);
+        const error = await readError(invalidResponse);
+        assert.equal(error.code, "VALIDATION_ERROR");
+        assert.deepEqual(error.details, { field: "archived" });
+      }
+    }
+
+    assert.equal(application.database.getCalendar(calendar.id)?.archived, false);
+    assert.equal(application.database.getExperiment(experiment.id)?.archived, false);
   } finally {
     await stopTestApplication(application);
   }
@@ -263,6 +400,103 @@ test("task API accepts optional quarter-hour times and rejects invalid values", 
       ((await removeResponse.json()) as { time: string | null }).time,
       null,
     );
+  } finally {
+    await stopTestApplication(application);
+  }
+});
+
+test("task API defaults, updates, and validates completion", async () => {
+  const application = await startTestApplication();
+  try {
+    const calendar = application.database.createCalendar({ name: "Completion API" });
+    const experiment = application.database.createExperiment({
+      name: "Completable experiment",
+      color: "#123456",
+      calendarId: calendar.id,
+    });
+    const baseInput = {
+      name: "API task",
+      date: "2026-08-14",
+      experimentId: experiment.id,
+    };
+    const headers = { "Content-Type": "application/json" };
+
+    const defaultResponse = await fetch(`${application.baseUrl}/api/tasks`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(baseInput),
+    });
+    assert.equal(defaultResponse.status, 201);
+    const defaultTask = await defaultResponse.json() as {
+      id: string;
+      completed: boolean;
+    };
+    assert.equal(defaultTask.completed, false);
+
+    const completedResponse = await fetch(`${application.baseUrl}/api/tasks`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...baseInput, name: "Already done", completed: true }),
+    });
+    assert.equal(completedResponse.status, 201);
+    assert.equal(
+      ((await completedResponse.json()) as { completed: boolean }).completed,
+      true,
+    );
+
+    const completeResponse = await fetch(
+      `${application.baseUrl}/api/tasks/${defaultTask.id}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ completed: true }),
+      },
+    );
+    assert.equal(completeResponse.status, 200);
+    assert.equal(
+      ((await completeResponse.json()) as { completed: boolean }).completed,
+      true,
+    );
+
+    const reopenResponse = await fetch(
+      `${application.baseUrl}/api/tasks/${defaultTask.id}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ completed: false }),
+      },
+    );
+    assert.equal(reopenResponse.status, 200);
+    assert.equal(
+      ((await reopenResponse.json()) as { completed: boolean }).completed,
+      false,
+    );
+
+    for (const invalidCompleted of [null, 0, "true", {}]) {
+      const invalidResponse = await fetch(`${application.baseUrl}/api/tasks`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ ...baseInput, completed: invalidCompleted }),
+      });
+      assert.equal(invalidResponse.status, 400);
+      const error = await readError(invalidResponse);
+      assert.equal(error.code, "VALIDATION_ERROR");
+      assert.deepEqual(error.details, { field: "completed" });
+    }
+
+    const invalidPatchResponse = await fetch(
+      `${application.baseUrl}/api/tasks/${defaultTask.id}`,
+      {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ completed: "false" }),
+      },
+    );
+    assert.equal(invalidPatchResponse.status, 400);
+    assert.deepEqual((await readError(invalidPatchResponse)).details, {
+      field: "completed",
+    });
+    assert.equal(application.database.getTask(defaultTask.id)?.completed, false);
   } finally {
     await stopTestApplication(application);
   }

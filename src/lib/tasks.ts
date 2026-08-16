@@ -5,6 +5,11 @@ export interface TaskSortable {
   createdAt?: string | null;
 }
 
+export interface CalendarTaskSortable extends TaskSortable {
+  /** Missing on older in-memory records, which are treated as incomplete. */
+  completed?: boolean | null;
+}
+
 export interface TaskGroupable extends TaskSortable {
   experimentId?: string | null;
 }
@@ -90,6 +95,20 @@ export function sortTasks<TTask extends TaskSortable>(tasks: readonly TTask[]): 
       return left.originalIndex - right.originalIndex;
     })
     .map(({ task }) => task);
+}
+
+/**
+ * Keeps the normal within-day order while moving completed work below all
+ * incomplete work in the space-constrained month view.
+ */
+export function sortCalendarTasks<TTask extends CalendarTaskSortable>(
+  tasks: readonly TTask[],
+): TTask[] {
+  const sorted = sortTasks(tasks);
+  return [
+    ...sorted.filter((task) => task.completed !== true),
+    ...sorted.filter((task) => task.completed === true),
+  ];
 }
 
 export function formatTaskTime(

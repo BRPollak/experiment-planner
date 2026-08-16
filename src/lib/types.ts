@@ -3,6 +3,7 @@ import type { Experiment, ExperimentInput } from "../../shared/models";
 export interface PlannerCalendar {
   id: string;
   name: string;
+  archived: boolean;
   createdAt: string;
   updatedAt: string;
   experimentCount: number;

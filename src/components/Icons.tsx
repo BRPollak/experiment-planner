@@ -57,6 +57,24 @@ export function TrashIcon(props: IconProps) {
   );
 }
 
+export function ArchiveIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 8h16v11H4V8ZM3 4h18v4H3V4Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" />
+      <path d="M12 10v6m-2.5-2.5L12 16l2.5-2.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+    </IconBase>
+  );
+}
+
+export function RestoreIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 8h16v11H4V8ZM3 4h18v4H3V4Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" />
+      <path d="M12 16v-6m-2.5 2.5L12 10l2.5 2.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+    </IconBase>
+  );
+}
+
 export function FlaskIcon(props: IconProps) {
   return (
     <IconBase {...props}>
@@ -86,6 +104,14 @@ export function CloseIcon(props: IconProps) {
   return (
     <IconBase {...props}>
       <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </IconBase>
+  );
+}
+
+export function CheckIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="m6.5 12.5 3.5 3.5 7.5-8" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" />
     </IconBase>
   );
 }

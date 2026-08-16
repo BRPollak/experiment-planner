@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { backup, DatabaseSync } from "node:sqlite";
 
-const SUPPORTED_SCHEMA_VERSION = 3;
+const SUPPORTED_SCHEMA_VERSION = 5;
 
 interface TableInfoRow {
   name: string;
@@ -175,11 +175,17 @@ function validateSupportedPlannerSchema(database: DatabaseSync): void {
     ...(schemaVersion >= 2
       ? [{ name: "calendar_id", type: "TEXT", notNull: false } as const]
       : []),
+    ...(schemaVersion >= 5
+      ? [{ name: "archived", type: "INTEGER", notNull: true } as const]
+      : []),
   ]);
   assertExpectedColumns(database, "tasks", [
     ...taskColumnsV1,
     ...(schemaVersion >= 3
       ? [{ name: "time", type: "TEXT", notNull: false } as const]
+      : []),
+    ...(schemaVersion >= 4
+      ? [{ name: "completed", type: "INTEGER", notNull: true } as const]
       : []),
   ]);
   assertExpectedForeignKey(database, "tasks", {
@@ -198,7 +204,12 @@ function validateSupportedPlannerSchema(database: DatabaseSync): void {
       throw new Error("Legacy database has an incompatible version 1 schema.");
     }
   } else {
-    assertExpectedColumns(database, "calendars", calendarColumns);
+    assertExpectedColumns(database, "calendars", [
+      ...calendarColumns,
+      ...(schemaVersion >= 5
+        ? [{ name: "archived", type: "INTEGER", notNull: true } as const]
+        : []),
+    ]);
     assertExpectedForeignKey(database, "experiments", {
       table: "calendars",
       from: "calendar_id",

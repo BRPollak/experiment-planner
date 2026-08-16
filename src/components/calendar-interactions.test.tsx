@@ -16,6 +16,7 @@ const experimentAlpha: Experiment = {
   name: "Alpha experiment",
   color: "#2563EB",
   description: null,
+  archived: false,
   calendarId: "calendar",
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
@@ -35,6 +36,7 @@ function makeTask(id: string, overrides: Partial<Task> = {}): Task {
     name: id,
     date: "2026-08-01",
     time: null,
+    completed: false,
     experimentId: experimentAlpha.id,
     notes: null,
     createdAt: "2026-01-01T08:00:00.000Z",
@@ -169,16 +171,19 @@ interface CalendarSpies {
   created: string[];
   edited: Task[];
   opened: string[];
+  toggled: Array<[Task, boolean]>;
 }
 
 function renderCalendar(
   tasks: Task[] = [],
   movingTaskIds: ReadonlySet<string> = new Set(),
   month = new Date(2026, 7, 1),
+  completingTaskIds: ReadonlySet<string> = new Set(),
 ): { container: HTMLElement; spies: CalendarSpies } {
-  const spies: CalendarSpies = { created: [], edited: [], opened: [] };
+  const spies: CalendarSpies = { created: [], edited: [], opened: [], toggled: [] };
   const container = render(
     <MonthCalendar
+      completingTaskIds={completingTaskIds}
       experiments={[experimentAlpha, experimentBeta]}
       hasCalendar
       loading={false}
@@ -191,6 +196,7 @@ function renderCalendar(
       onMonthChange={() => undefined}
       onMoveTask={() => undefined}
       onOpenDay={(date) => spies.opened.push(date)}
+      onToggleTaskCompletion={(task, completed) => spies.toggled.push([task, completed])}
       selectedCalendarName="Calendar"
       selectedExperimentId={null}
       tasks={tasks}
@@ -235,6 +241,61 @@ test("clicking an existing task edits it without opening the day view", () => {
   assert.deepEqual(spies.edited.map(({ id }) => id), [task.id]);
   assert.deepEqual(spies.opened, []);
   assert.match(requireElement(cell, ".calendar-task__time").textContent ?? "", /9:15/);
+});
+
+test("calendar completion controls expose state and toggle without editing or opening the day", () => {
+  const active = makeTask("Active calendar task", { time: "08:00" });
+  const completed = makeTask("Completed calendar task", { completed: true, time: "09:00" });
+  const { container, spies } = renderCalendar([completed, active]);
+  const cell = requireElement<HTMLElement>(container, '[data-date-key="2026-08-01"]');
+  const rows = [...cell.querySelectorAll<HTMLElement>(".calendar-task-row")];
+  const checkboxes = rows.map((row) => requireElement<HTMLButtonElement>(
+    row,
+    ":scope > .calendar-task__checkbox[role='checkbox']",
+  ));
+
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((row) => row.querySelector(":scope > .calendar-task")));
+  assert.ok(checkboxes.every((checkbox) => checkbox.type === "button"));
+  assert.deepEqual(
+    checkboxes.map((checkbox) => checkbox.getAttribute("aria-checked")),
+    ["false", "true"],
+  );
+
+  click(checkboxes[0]);
+  click(checkboxes[1]);
+
+  assert.deepEqual(
+    spies.toggled.map(([task, completedState]) => [task.id, completedState]),
+    [
+      [active.id, true],
+      [completed.id, false],
+    ],
+  );
+  assert.deepEqual(spies.edited, []);
+  assert.deepEqual(spies.opened, []);
+});
+
+test("calendar completion controls are disabled while completion or date changes are saving", () => {
+  const active = makeTask("Available task", { time: "08:00" });
+  const completing = makeTask("Completing task", { time: "09:00" });
+  const moving = makeTask("Moving task", { time: "10:00" });
+  const { container } = renderCalendar(
+    [moving, completing, active],
+    new Set([moving.id]),
+    new Date(2026, 7, 1),
+    new Set([completing.id]),
+  );
+  const rows = [...container.querySelectorAll<HTMLElement>(".calendar-task-row")];
+  const checkboxFor = (taskName: string) => {
+    const row = rows.find((candidate) => candidate.textContent?.includes(taskName));
+    assert.ok(row, `Expected row for ${taskName}`);
+    return requireElement<HTMLButtonElement>(row, ":scope > .calendar-task__checkbox");
+  };
+
+  assert.equal(checkboxFor(active.name).disabled, false);
+  assert.equal(checkboxFor(completing.name).disabled, true);
+  assert.equal(checkboxFor(moving.name).disabled, true);
 });
 
 test("a click originating inside a disabled moving task never activates its day cell", () => {
@@ -373,12 +434,23 @@ test("a non-current month beginning Saturday enters the grid on day one", () => 
   assert.equal(tabStops[0].dataset.dateKey, "2027-05-01");
 });
 
-test("calendar and expanded day view expose the same shared task order", () => {
+test("calendar moves completed tasks below active tasks while day view keeps normal task order", () => {
   const tasks = [
-    makeTask("Untimed", { createdAt: "2026-01-01T07:00:00.000Z" }),
-    makeTask("Later", { time: "14:30", createdAt: "2026-01-01T06:00:00.000Z" }),
-    makeTask("Same time newer", { time: "09:15", createdAt: "2026-01-01T09:00:00.000Z" }),
-    makeTask("Same time older", { time: "09:15", createdAt: "2026-01-01T08:00:00.000Z" }),
+    makeTask("Active untimed", { createdAt: "2026-01-01T07:00:00.000Z" }),
+    makeTask("Completed later", {
+      completed: true,
+      time: "10:00",
+      createdAt: "2026-01-01T06:00:00.000Z",
+    }),
+    makeTask("Active middle", {
+      time: "09:15",
+      createdAt: "2026-01-01T09:00:00.000Z",
+    }),
+    makeTask("Completed earliest", {
+      completed: true,
+      time: "08:00",
+      createdAt: "2026-01-01T08:00:00.000Z",
+    }),
   ];
   const { container: calendar } = renderCalendar(tasks);
   const day = requireElement(calendar, '[data-date-key="2026-08-01"]');
@@ -392,14 +464,85 @@ test("calendar and expanded day view expose the same shared task order", () => {
       onClose={() => undefined}
       onCreateTask={() => undefined}
       onEditTask={() => undefined}
+      onToggleTaskCompletion={() => undefined}
       tasks={tasks}
     />,
   );
   const detailOrder = [...detail.querySelectorAll(".day-view__task-name")]
     .map((node) => node.textContent);
 
-  assert.deepEqual(calendarOrder, ["Same time older", "Same time newer", "Later", "Untimed"]);
-  assert.deepEqual(detailOrder, calendarOrder);
+  assert.deepEqual(calendarOrder, [
+    "Active middle",
+    "Active untimed",
+    "Completed earliest",
+    "Completed later",
+  ]);
+  assert.deepEqual(detailOrder, [
+    "Completed earliest",
+    "Active middle",
+    "Completed later",
+    "Active untimed",
+  ]);
+  assert.deepEqual(
+    [...day.querySelectorAll(".calendar-task.is-completed .calendar-task__name")]
+      .map((node) => node.textContent),
+    ["Completed earliest", "Completed later"],
+  );
+  assert.deepEqual(
+    [...detail.querySelectorAll(".day-view__task.is-completed .day-view__task-name")]
+      .map((node) => node.textContent),
+    ["Completed earliest", "Completed later"],
+  );
+});
+
+test("day view completion controls expose state and request the inverse value without editing", () => {
+  const active = makeTask("Active task", { time: "08:00" });
+  const completed = makeTask("Completed task", { completed: true, time: "09:00" });
+  const completing = makeTask("Saving completion", { time: "10:00" });
+  const toggles: Array<[string, boolean]> = [];
+  const edited: string[] = [];
+  let closeCount = 0;
+  const container = render(
+    <DayView
+      completingTaskIds={new Set([completing.id])}
+      date="2026-08-01"
+      experiments={[experimentAlpha]}
+      onClose={() => { closeCount += 1; }}
+      onCreateTask={() => undefined}
+      onEditTask={(task) => edited.push(task.id)}
+      onToggleTaskCompletion={(task, nextCompleted) => {
+        toggles.push([task.id, nextCompleted]);
+      }}
+      tasks={[completing, completed, active]}
+    />,
+  );
+
+  const checkboxes = [...container.querySelectorAll<HTMLButtonElement>(
+    ".day-view__task-checkbox[role='checkbox']",
+  )];
+  assert.equal(checkboxes.length, 3);
+  assert.ok(checkboxes.every((checkbox) => checkbox.type === "button"));
+  assert.deepEqual(
+    checkboxes.map((checkbox) => checkbox.getAttribute("aria-checked")),
+    ["false", "true", "false"],
+  );
+  assert.equal(checkboxes[0].disabled, false);
+  assert.equal(checkboxes[1].disabled, false);
+  assert.equal(checkboxes[2].disabled, true);
+
+  click(checkboxes[0]);
+  click(checkboxes[1]);
+
+  assert.deepEqual(toggles, [
+    [active.id, true],
+    [completed.id, false],
+  ]);
+  assert.deepEqual(edited, []);
+  assert.equal(closeCount, 0);
+  assert.equal(
+    requireElement(container, ".day-view__task.is-completed .day-view__task-name").textContent,
+    completed.name,
+  );
 });
 
 test("the add-task control defaults visible for no-hover devices and reveals smoothly on fine pointers", () => {
@@ -408,6 +551,25 @@ test("the add-task control defaults visible for no-hover devices and reveals smo
   assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)/);
   assert.match(css, /\.calendar-day:hover \.calendar-day__add-task,[\s\S]*\.calendar-day:focus-within \.calendar-day__add-task/);
   assert.match(css, /transition:[^;]*opacity[^;]*transform/);
+});
+
+test("calendar completion controls default visible and reveal smoothly on hover or focus", () => {
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const checkboxRules = [...css.matchAll(/\.calendar-task__checkbox\s*\{([^}]*)\}/g)]
+    .map((match) => match[1]);
+  const baseRule = checkboxRules[0] ?? "";
+  const transition = /transition:\s*([^;]+)/.exec(baseRule)?.[1] ?? "";
+  assert.match(baseRule, /opacity:\s*(?:1(?:\.0+)?|0?\.(?:0*[1-9]\d*))/);
+  assert.match(transition, /opacity/);
+  assert.match(transition, /transform/);
+  assert.match(css, /@media \(hover: hover\) and \(pointer: fine\)/);
+  assert.ok(checkboxRules.some((rule) => (
+    /pointer-events:\s*none/.test(rule) && /opacity:\s*0(?:;|\s|$)/.test(rule)
+  )));
+  const revealRule = /\.calendar-task-row:hover \.calendar-task__checkbox,[\s\S]*?\.calendar-task-row:focus-within \.calendar-task__checkbox\s*\{([^}]*)\}/s
+    .exec(css)?.[1] ?? "";
+  assert.match(revealRule, /pointer-events:\s*auto/);
+  assert.match(revealRule, /opacity:\s*1(?:;|\s|$)/);
 });
 
 test("weekend headers and cells use the subtle planning treatment", () => {
@@ -456,6 +618,7 @@ test("day view groups in first-task order and renders time plus only nonblank de
       onClose={() => undefined}
       onCreateTask={() => undefined}
       onEditTask={() => undefined}
+      onToggleTaskCompletion={() => undefined}
       tasks={tasks}
     />,
   );
@@ -480,6 +643,7 @@ test("day view respects the filtered task list and shows an intentional empty st
       onClose={() => undefined}
       onCreateTask={() => undefined}
       onEditTask={() => undefined}
+      onToggleTaskCompletion={() => undefined}
       tasks={[makeTask("Visible alpha"), makeTask("Other date", { date: "2026-08-02" })]}
     />,
   );
@@ -493,6 +657,7 @@ test("day view respects the filtered task list and shows an intentional empty st
       onClose={() => undefined}
       onCreateTask={() => undefined}
       onEditTask={() => undefined}
+      onToggleTaskCompletion={() => undefined}
       tasks={[]}
     />,
   );
@@ -515,6 +680,7 @@ test("Escape closes the day view and restores focus to its trigger", () => {
         onClose={() => setOpen(false)}
         onCreateTask={() => undefined}
         onEditTask={() => undefined}
+        onToggleTaskCompletion={() => undefined}
         tasks={[makeTask("Task")]}
       />
     ) : null;
@@ -543,6 +709,7 @@ test("the day modal traps focus and only a direct backdrop press dismisses it", 
       onClose={() => { closeCount += 1; }}
       onCreateTask={() => undefined}
       onEditTask={() => undefined}
+      onToggleTaskCompletion={() => undefined}
       tasks={[makeTask("Task")]}
     />,
   );
@@ -595,6 +762,7 @@ test("day-view add closes before opening task creation for the selected date", (
       onClose={() => events.push("close")}
       onCreateTask={(date) => events.push(`create:${date}`)}
       onEditTask={() => undefined}
+      onToggleTaskCompletion={() => undefined}
       tasks={[makeTask("Task")]}
     />,
   );
@@ -616,6 +784,7 @@ test("day view disables task editing while a date move is being saved", () => {
       onClose={() => undefined}
       onCreateTask={() => undefined}
       onEditTask={() => { edited = true; }}
+      onToggleTaskCompletion={() => undefined}
       tasks={[task]}
     />,
   );

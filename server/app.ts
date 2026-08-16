@@ -383,6 +383,14 @@ export function createApplication(options: ApplicationOptions) {
             id,
             parseCalendarDeletionOptions(url),
           );
+          if (!result.deleted && result.archiveRequired) {
+            throw new HttpError(
+              409,
+              "Archive this calendar before permanently deleting it.",
+              "CALENDAR_NOT_ARCHIVED",
+              { archiveRequired: true },
+            );
+          }
           if (!result.deleted && result.confirmationRequired) {
             const countsChanged = result.countsChanged === true;
             throw new HttpError(
@@ -461,6 +469,14 @@ export function createApplication(options: ApplicationOptions) {
             id,
             parseExperimentDeletionOptions(url),
           );
+          if (!result.deleted && result.archiveRequired) {
+            throw new HttpError(
+              409,
+              "Archive this experiment before permanently deleting it.",
+              "EXPERIMENT_NOT_ARCHIVED",
+              { archiveRequired: true },
+            );
+          }
           if (!result.deleted && result.confirmationRequired) {
             const countsChanged = result.countsChanged === true;
             throw new HttpError(

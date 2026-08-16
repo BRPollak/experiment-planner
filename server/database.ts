@@ -19,8 +19,10 @@ import { fileURLToPath } from "node:url";
 import type {
   Calendar,
   CalendarInput,
+  CalendarUpdateInput,
   Experiment,
   ExperimentInput,
+  ExperimentUpdateInput,
   MigrationStatus,
   Task,
   TaskInput,
@@ -29,6 +31,7 @@ import type {
 interface CalendarRow {
   id: string;
   name: string;
+  archived: number;
   created_at: string;
   updated_at: string;
   experiment_count: number;
@@ -40,6 +43,7 @@ interface ExperimentRow {
   name: string;
   color: string;
   description: string | null;
+  archived: number;
   calendar_id: string | null;
   created_at: string;
   updated_at: string;
@@ -53,6 +57,7 @@ interface TaskRow {
   time: string | null;
   experiment_id: string;
   notes: string | null;
+  completed: number;
   created_at: string;
   updated_at: string;
 }
@@ -95,6 +100,7 @@ export interface ExperimentDeletionResult {
   taskCount: number;
   confirmationRequired: boolean;
   countsChanged?: boolean;
+  archiveRequired?: boolean;
 }
 
 export interface CalendarDeletionResult {
@@ -103,6 +109,7 @@ export interface CalendarDeletionResult {
   taskCount: number;
   confirmationRequired: boolean;
   countsChanged?: boolean;
+  archiveRequired?: boolean;
 }
 
 export interface ExperimentDeletionOptions {
@@ -248,6 +255,26 @@ const migrations = [
         );
     `,
   },
+  {
+    version: 4,
+    sql: `
+      ALTER TABLE tasks
+        ADD COLUMN completed INTEGER NOT NULL DEFAULT 0
+      CHECK (completed IN (0, 1));
+    `,
+  },
+  {
+    version: 5,
+    sql: `
+      ALTER TABLE calendars
+        ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+        CHECK (archived IN (0, 1));
+
+      ALTER TABLE experiments
+        ADD COLUMN archived INTEGER NOT NULL DEFAULT 0
+        CHECK (archived IN (0, 1));
+    `,
+  },
 ] as const;
 
 export const latestSupportedSchemaVersion = migrations.at(-1)?.version ?? 0;
@@ -301,6 +328,7 @@ function assertSchemaMatchesVersion(
         "created_at",
         "updated_at",
         ...(userVersion >= 2 ? ["calendar_id"] : []),
+        ...(userVersion >= 5 ? ["archived"] : []),
       ],
     ],
     [
@@ -314,12 +342,19 @@ function assertSchemaMatchesVersion(
         "created_at",
         "updated_at",
         ...(userVersion >= 3 ? ["time"] : []),
+        ...(userVersion >= 4 ? ["completed"] : []),
       ],
     ],
     [
       "calendars",
       userVersion >= 2
-        ? ["id", "name", "created_at", "updated_at"]
+        ? [
+            "id",
+            "name",
+            "created_at",
+            "updated_at",
+            ...(userVersion >= 5 ? ["archived"] : []),
+          ]
         : [],
     ],
   ]);
@@ -597,6 +632,7 @@ function mapCalendar(row: CalendarRow): Calendar {
   return {
     id: row.id,
     name: row.name,
+    archived: row.archived === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     experimentCount: Number(row.experiment_count),
@@ -610,6 +646,7 @@ function mapExperiment(row: ExperimentRow): Experiment {
     name: row.name,
     color: row.color,
     description: row.description,
+    archived: row.archived === 1,
     calendarId: row.calendar_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -625,6 +662,7 @@ function mapTask(row: TaskRow): Task {
     time: row.time,
     experimentId: row.experiment_id,
     notes: row.notes,
+    completed: row.completed === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -634,6 +672,7 @@ const calendarSelect = `
   SELECT
     c.id,
     c.name,
+    c.archived,
     c.created_at,
     c.updated_at,
     COUNT(DISTINCT e.id) AS experiment_count,
@@ -649,6 +688,7 @@ const experimentSelect = `
     e.name,
     e.color,
     e.description,
+    e.archived,
     e.calendar_id,
     e.created_at,
     e.updated_at,
@@ -665,6 +705,7 @@ const taskSelect = `
     t.time,
     t.experiment_id,
     t.notes,
+    t.completed,
     t.created_at,
     t.updated_at
   FROM tasks AS t
@@ -830,12 +871,19 @@ export class ExperimentPlannerDatabase {
     return this.getCalendar(id)!;
   }
 
-  updateCalendar(id: string, input: Partial<CalendarInput>): Calendar | null {
+  updateCalendar(id: string, input: CalendarUpdateInput): Calendar | null {
     const existing = this.getCalendar(id);
     if (!existing) return null;
     this.database
-      .prepare("UPDATE calendars SET name = ?, updated_at = ? WHERE id = ?")
-      .run(input.name ?? existing.name, new Date().toISOString(), id);
+      .prepare(
+        "UPDATE calendars SET name = ?, archived = ?, updated_at = ? WHERE id = ?",
+      )
+      .run(
+        input.name ?? existing.name,
+        (input.archived ?? existing.archived) ? 1 : 0,
+        new Date().toISOString(),
+        id,
+      );
     return this.getCalendar(id);
   }
 
@@ -845,10 +893,10 @@ export class ExperimentPlannerDatabase {
   ): CalendarDeletionResult {
     this.database.exec("BEGIN IMMEDIATE");
     try {
-      const exists = this.database
-        .prepare("SELECT 1 AS value FROM calendars WHERE id = ?")
-        .get(id);
-      if (!exists) {
+      const calendar = this.database
+        .prepare("SELECT archived FROM calendars WHERE id = ?")
+        .get(id) as { archived: number } | undefined;
+      if (!calendar) {
         this.database.exec("COMMIT");
         return {
           deleted: false,
@@ -872,6 +920,17 @@ export class ExperimentPlannerDatabase {
         .get(id, id) as unknown as CalendarContentCountRow;
       const experimentCount = Number(counts.experiment_count);
       const taskCount = Number(counts.task_count);
+
+      if (calendar.archived !== 1) {
+        this.database.exec("COMMIT");
+        return {
+          deleted: false,
+          experimentCount,
+          taskCount,
+          confirmationRequired: false,
+          archiveRequired: true,
+        };
+      }
 
       if (experimentCount > 0 || taskCount > 0) {
         if (!options.confirmCascade) {
@@ -999,7 +1058,7 @@ export class ExperimentPlannerDatabase {
 
   updateExperiment(
     id: string,
-    input: Partial<ExperimentInput>,
+    input: ExperimentUpdateInput,
   ): Experiment | null {
     const existing = this.getExperiment(id);
     if (!existing) return null;
@@ -1012,14 +1071,15 @@ export class ExperimentPlannerDatabase {
     const description = Object.hasOwn(input, "description")
       ? input.description ?? null
       : existing.description;
+    const archived = input.archived ?? existing.archived;
 
     this.database
       .prepare(`
         UPDATE experiments
-        SET name = ?, color = ?, description = ?, calendar_id = ?, updated_at = ?
+        SET name = ?, color = ?, description = ?, calendar_id = ?, archived = ?, updated_at = ?
         WHERE id = ?
       `)
-      .run(name, color, description, calendarId, updatedAt, id);
+      .run(name, color, description, calendarId, archived ? 1 : 0, updatedAt, id);
 
     return this.getExperiment(id);
   }
@@ -1030,10 +1090,10 @@ export class ExperimentPlannerDatabase {
   ): ExperimentDeletionResult {
     this.database.exec("BEGIN IMMEDIATE");
     try {
-      const exists = this.database
-        .prepare("SELECT 1 AS value FROM experiments WHERE id = ?")
-        .get(id);
-      if (!exists) {
+      const experiment = this.database
+        .prepare("SELECT archived FROM experiments WHERE id = ?")
+        .get(id) as { archived: number } | undefined;
+      if (!experiment) {
         this.database.exec("COMMIT");
         return { deleted: false, taskCount: 0, confirmationRequired: false };
       }
@@ -1042,6 +1102,16 @@ export class ExperimentPlannerDatabase {
         .prepare("SELECT COUNT(*) AS count FROM tasks WHERE experiment_id = ?")
         .get(id) as unknown as CountRow;
       const taskCount = Number(countRow.count);
+
+      if (experiment.archived !== 1) {
+        this.database.exec("COMMIT");
+        return {
+          deleted: false,
+          taskCount,
+          confirmationRequired: false,
+          archiveRequired: true,
+        };
+      }
 
       if (taskCount > 0) {
         if (!options.confirmCascade) {
@@ -1120,8 +1190,8 @@ export class ExperimentPlannerDatabase {
     this.database
       .prepare(`
         INSERT INTO tasks (
-          id, experiment_id, name, date, time, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          id, experiment_id, name, date, time, notes, completed, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         id,
@@ -1130,6 +1200,7 @@ export class ExperimentPlannerDatabase {
         input.date,
         input.time ?? null,
         input.notes ?? null,
+        input.completed ? 1 : 0,
         timestamp,
         timestamp,
       );
@@ -1155,14 +1226,15 @@ export class ExperimentPlannerDatabase {
     const notes = Object.hasOwn(input, "notes")
       ? input.notes ?? null
       : existing.notes;
+    const completed = input.completed ?? existing.completed;
 
     this.database
       .prepare(`
         UPDATE tasks
-        SET name = ?, date = ?, time = ?, experiment_id = ?, notes = ?, updated_at = ?
+        SET name = ?, date = ?, time = ?, experiment_id = ?, notes = ?, completed = ?, updated_at = ?
         WHERE id = ?
       `)
-      .run(name, date, time, experimentId, notes, updatedAt, id);
+      .run(name, date, time, experimentId, notes, completed ? 1 : 0, updatedAt, id);
 
     return this.getTask(id);
   }

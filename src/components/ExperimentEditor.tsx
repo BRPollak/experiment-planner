@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { Experiment, ExperimentInput } from "../../shared/models";
 import { errorMessage } from "../lib/api";
-import { TrashIcon } from "./Icons";
+import { ArchiveIcon, RestoreIcon, TrashIcon } from "./Icons";
 import { Modal } from "./Modal";
 
 const COLOR_OPTIONS = [
@@ -19,6 +19,8 @@ const COLOR_OPTIONS = [
 interface ExperimentEditorProps {
   experiment?: Experiment;
   onSave: (input: Omit<ExperimentInput, "calendarId">) => Promise<void>;
+  onArchive?: () => Promise<void>;
+  onUnarchive?: () => Promise<void>;
   onRequestDelete?: () => void;
   onClose: () => void;
 }
@@ -26,6 +28,8 @@ interface ExperimentEditorProps {
 export function ExperimentEditor({
   experiment,
   onSave,
+  onArchive,
+  onUnarchive,
   onRequestDelete,
   onClose,
 }: ExperimentEditorProps) {
@@ -56,6 +60,54 @@ export function ExperimentEditor({
       setIsSaving(false);
     }
   };
+
+  const updateArchiveState = async (action: () => Promise<void>) => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await action();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const lifecycleActions = experiment ? (
+    experiment.archived ? (
+      <div className="modal__lifecycle-actions">
+        {onUnarchive ? (
+          <button
+            className="button button--text"
+            disabled={isSaving}
+            onClick={() => void updateArchiveState(onUnarchive)}
+            type="button"
+          >
+            <RestoreIcon /> Unarchive experiment
+          </button>
+        ) : null}
+        {onRequestDelete ? (
+          <button
+            className="button button--text-danger"
+            disabled={isSaving}
+            onClick={onRequestDelete}
+            type="button"
+          >
+            <TrashIcon /> Delete experiment
+          </button>
+        ) : null}
+      </div>
+    ) : onArchive ? (
+      <button
+        className="button button--text"
+        disabled={isSaving}
+        onClick={() => void updateArchiveState(onArchive)}
+        type="button"
+      >
+        <ArchiveIcon /> Archive experiment
+      </button>
+    ) : null
+  ) : null;
 
   return (
     <Modal
@@ -118,11 +170,7 @@ export function ExperimentEditor({
           {error ? <div className="form-error" role="alert">{error}</div> : null}
         </div>
         <footer className={`modal__footer ${experiment ? "modal__footer--split" : ""}`}>
-          {experiment && onRequestDelete ? (
-            <button className="button button--text-danger" disabled={isSaving} onClick={onRequestDelete} type="button">
-              <TrashIcon /> Delete experiment
-            </button>
-          ) : <span />}
+          {lifecycleActions ?? <span />}
           <div className="modal__actions">
             <button className="button button--secondary" disabled={isSaving} onClick={onClose} type="button">
               Cancel

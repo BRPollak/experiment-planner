@@ -1,4 +1,10 @@
-import type { CalendarInput, ExperimentInput, TaskInput } from "../shared/models";
+import type {
+  CalendarInput,
+  CalendarUpdateInput,
+  ExperimentInput,
+  ExperimentUpdateInput,
+  TaskInput,
+} from "../shared/models";
 
 export class ValidationError extends Error {
   readonly details: Record<string, unknown>;
@@ -94,13 +100,21 @@ export function validateCalendarInput(value: unknown): CalendarInput {
   return { name: requiredText(object, "name", 120) };
 }
 
-export function validateCalendarUpdate(value: unknown): Partial<CalendarInput> {
+export function validateCalendarUpdate(value: unknown): CalendarUpdateInput {
   const object = requireObject(value);
-  rejectUnknownFields(object, ["name"]);
+  rejectUnknownFields(object, ["name", "archived"]);
   if (Object.keys(object).length === 0) {
-    throw new ValidationError("Provide a calendar name to update.");
+    throw new ValidationError("Provide at least one calendar field to update.");
   }
-  return { name: requiredText(object, "name", 120) };
+
+  const result: CalendarUpdateInput = {};
+  if (Object.hasOwn(object, "name")) {
+    result.name = requiredText(object, "name", 120);
+  }
+  if (Object.hasOwn(object, "archived")) {
+    result.archived = optionalBoolean(object, "archived");
+  }
+  return result;
 }
 
 export function validateMigrationInput(value: unknown): { calendarId: string } {
@@ -135,6 +149,17 @@ function optionalTaskTime(object: JsonObject): string | null | undefined {
   return value;
 }
 
+function optionalBoolean(object: JsonObject, field: string): boolean | undefined {
+  if (!Object.hasOwn(object, field)) return undefined;
+  const value = object[field];
+  if (typeof value !== "boolean") {
+    throw new ValidationError(`${field} must be a boolean.`, {
+      field,
+    });
+  }
+  return value;
+}
+
 export function validateExperimentInput(value: unknown): ExperimentInput {
   const object = requireObject(value);
   rejectUnknownFields(object, ["name", "color", "description", "calendarId"]);
@@ -148,14 +173,14 @@ export function validateExperimentInput(value: unknown): ExperimentInput {
 
 export function validateExperimentUpdate(
   value: unknown,
-): Partial<ExperimentInput> {
+): ExperimentUpdateInput {
   const object = requireObject(value);
-  rejectUnknownFields(object, ["name", "color", "description", "calendarId"]);
+  rejectUnknownFields(object, ["name", "color", "description", "calendarId", "archived"]);
   if (Object.keys(object).length === 0) {
     throw new ValidationError("Provide at least one experiment field to update.");
   }
 
-  const result: Partial<ExperimentInput> = {};
+  const result: ExperimentUpdateInput = {};
   if (Object.hasOwn(object, "name")) {
     result.name = requiredText(object, "name", 120);
   }
@@ -168,24 +193,28 @@ export function validateExperimentUpdate(
   if (Object.hasOwn(object, "calendarId")) {
     result.calendarId = requiredText(object, "calendarId", 100);
   }
+  if (Object.hasOwn(object, "archived")) {
+    result.archived = optionalBoolean(object, "archived");
+  }
   return result;
 }
 
 export function validateTaskInput(value: unknown): TaskInput {
   const object = requireObject(value);
-  rejectUnknownFields(object, ["name", "date", "time", "experimentId", "notes"]);
+  rejectUnknownFields(object, ["name", "date", "time", "experimentId", "notes", "completed"]);
   return {
     name: requiredText(object, "name", 200),
     date: calendarDate(object),
     time: optionalTaskTime(object),
     experimentId: requiredText(object, "experimentId", 100),
     notes: optionalText(object, "notes", 10_000),
+    completed: optionalBoolean(object, "completed"),
   };
 }
 
 export function validateTaskUpdate(value: unknown): Partial<TaskInput> {
   const object = requireObject(value);
-  rejectUnknownFields(object, ["name", "date", "time", "experimentId", "notes"]);
+  rejectUnknownFields(object, ["name", "date", "time", "experimentId", "notes", "completed"]);
   if (Object.keys(object).length === 0) {
     throw new ValidationError("Provide at least one task field to update.");
   }
@@ -205,6 +234,9 @@ export function validateTaskUpdate(value: unknown): Partial<TaskInput> {
   }
   if (Object.hasOwn(object, "notes")) {
     result.notes = optionalText(object, "notes", 10_000);
+  }
+  if (Object.hasOwn(object, "completed")) {
+    result.completed = optionalBoolean(object, "completed");
   }
   return result;
 }
