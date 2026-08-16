@@ -1,6 +1,14 @@
 import type { Experiment } from "../../shared/models";
 import type { PlannerCalendar } from "../lib/types";
-import { CalendarIcon, FlaskIcon, PencilIcon, PlusIcon, TrashIcon } from "./Icons";
+import {
+  ArchiveIcon,
+  CalendarIcon,
+  FlaskIcon,
+  PencilIcon,
+  PlusIcon,
+  RestoreIcon,
+  TrashIcon,
+} from "./Icons";
 
 interface ExperimentSidebarProps {
   experiments: Experiment[];
@@ -15,6 +23,8 @@ interface ExperimentSidebarProps {
   onSelectCalendar: (id: string) => void;
   onCreateCalendar: () => void;
   onEditCalendar: (calendar: PlannerCalendar) => void;
+  onArchiveCalendar: (calendar: PlannerCalendar) => void;
+  onUnarchiveCalendar: (calendar: PlannerCalendar) => void;
   onDeleteCalendar: (calendar: PlannerCalendar) => void;
 }
 
@@ -35,10 +45,46 @@ export function ExperimentSidebar({
   onSelectCalendar,
   onCreateCalendar,
   onEditCalendar,
+  onArchiveCalendar,
+  onUnarchiveCalendar,
   onDeleteCalendar,
 }: ExperimentSidebarProps) {
   const totalTasks = experiments.reduce((sum, experiment) => sum + experiment.taskCount, 0);
   const selectedCalendar = calendars.find((calendar) => calendar.id === selectedCalendarId);
+  const activeCalendars = calendars.filter((calendar) => !calendar.archived);
+  const archivedCalendars = calendars.filter((calendar) => calendar.archived);
+  const activeExperiments = experiments.filter((experiment) => !experiment.archived);
+  const archivedExperiments = experiments.filter((experiment) => experiment.archived);
+
+  const renderExperiment = (experiment: Experiment) => (
+    <div
+      className={`experiment-filter-wrap ${experiment.archived ? "is-archived" : ""} ${selectedExperimentId === experiment.id ? "is-selected" : ""}`}
+      key={experiment.id}
+    >
+      <button
+        aria-current={selectedExperimentId === experiment.id ? "page" : undefined}
+        className="experiment-filter"
+        onClick={() => onSelect(experiment.id)}
+        title={experiment.description ?? experiment.name}
+        type="button"
+      >
+        <span className="experiment-dot" style={{ backgroundColor: experiment.color }} />
+        <span className="experiment-filter__content">
+          <span className="experiment-filter__name">{experiment.name}</span>
+          <span className="experiment-filter__count">{taskCountLabel(experiment.taskCount)}</span>
+        </span>
+      </button>
+      <button
+        aria-label={`Edit ${experiment.name}`}
+        className="experiment-edit-button"
+        onClick={() => onEdit(experiment)}
+        title={`Edit ${experiment.name}`}
+        type="button"
+      >
+        <PencilIcon />
+      </button>
+    </div>
+  );
 
   return (
     <aside className="sidebar">
@@ -61,24 +107,45 @@ export function ExperimentSidebar({
           <div aria-label="Loading calendars" className="workspace-switcher__skeleton" />
         ) : selectedCalendar ? (
           <>
-            <div className="workspace-switcher__row">
+            <div className={`workspace-switcher__row ${selectedCalendar.archived ? "is-archived" : ""}`}>
               <span className="workspace-select-icon"><CalendarIcon /></span>
               <select
                 aria-label="Selected calendar"
-                className="workspace-select"
+                className={`workspace-select ${selectedCalendar.archived ? "is-archived" : ""}`}
                 onChange={(event) => onSelectCalendar(event.target.value)}
                 value={selectedCalendar.id}
               >
-                {calendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}
+                {activeCalendars.length ? (
+                  <optgroup label="Active calendars">
+                    {activeCalendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}
+                  </optgroup>
+                ) : null}
+                {archivedCalendars.length ? (
+                  <optgroup label="Archived calendars">
+                    {archivedCalendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.name}</option>)}
+                  </optgroup>
+                ) : null}
               </select>
               <button aria-label={`Rename ${selectedCalendar.name}`} className="workspace-action" onClick={() => onEditCalendar(selectedCalendar)} title="Rename calendar" type="button">
                 <PencilIcon />
               </button>
-              <button aria-label={`Delete ${selectedCalendar.name}`} className="workspace-action workspace-action--danger" onClick={() => onDeleteCalendar(selectedCalendar)} title="Delete calendar" type="button">
-                <TrashIcon />
-              </button>
+              {selectedCalendar.archived ? (
+                <>
+                  <button aria-label={`Unarchive ${selectedCalendar.name}`} className="workspace-action" onClick={() => onUnarchiveCalendar(selectedCalendar)} title="Unarchive calendar" type="button">
+                    <RestoreIcon />
+                  </button>
+                  <button aria-label={`Delete ${selectedCalendar.name}`} className="workspace-action workspace-action--danger" onClick={() => onDeleteCalendar(selectedCalendar)} title="Delete calendar" type="button">
+                    <TrashIcon />
+                  </button>
+                </>
+              ) : (
+                <button aria-label={`Archive ${selectedCalendar.name}`} className="workspace-action" onClick={() => onArchiveCalendar(selectedCalendar)} title="Archive calendar" type="button">
+                  <ArchiveIcon />
+                </button>
+              )}
             </div>
             <p className="workspace-switcher__meta">
+              {selectedCalendar.archived ? <><strong>Archived</strong> · </> : null}
               {selectedCalendar.experimentCount} {selectedCalendar.experimentCount === 1 ? "experiment" : "experiments"} · {selectedCalendar.taskCount} {selectedCalendar.taskCount === 1 ? "task" : "tasks"}
             </p>
           </>
@@ -125,32 +192,29 @@ export function ExperimentSidebar({
             <span /><span /><span />
           </div>
         ) : experiments.length ? (
-          experiments.map((experiment) => (
-            <div className={`experiment-filter-wrap ${selectedExperimentId === experiment.id ? "is-selected" : ""}`} key={experiment.id}>
-              <button
-                aria-current={selectedExperimentId === experiment.id ? "page" : undefined}
-                className="experiment-filter"
-                onClick={() => onSelect(experiment.id)}
-                title={experiment.description ?? experiment.name}
-                type="button"
-              >
-                <span className="experiment-dot" style={{ backgroundColor: experiment.color }} />
-                <span className="experiment-filter__content">
-                  <span className="experiment-filter__name">{experiment.name}</span>
-                  <span className="experiment-filter__count">{taskCountLabel(experiment.taskCount)}</span>
-                </span>
-              </button>
-              <button
-                aria-label={`Edit ${experiment.name}`}
-                className="experiment-edit-button"
-                onClick={() => onEdit(experiment)}
-                title={`Edit ${experiment.name}`}
-                type="button"
-              >
-                <PencilIcon />
-              </button>
+          <>
+            <div aria-label="Active experiments" className="experiment-group" role="group">
+              {archivedExperiments.length ? (
+                <div aria-hidden="true" className="experiment-group__heading">
+                  <span>Active</span><small>{activeExperiments.length}</small>
+                </div>
+              ) : null}
+              {activeExperiments.length ? activeExperiments.map(renderExperiment) : (
+                <div className="sidebar-empty sidebar-empty--compact">
+                  <p>No active experiments.</p>
+                  <button onClick={onCreate} type="button"><PlusIcon /> Create experiment</button>
+                </div>
+              )}
             </div>
-          ))
+            {archivedExperiments.length ? (
+              <div aria-label="Archived experiments" className="experiment-group experiment-group--archived" role="group">
+                <div aria-hidden="true" className="experiment-group__heading">
+                  <span>Archived</span><small>{archivedExperiments.length}</small>
+                </div>
+                {archivedExperiments.map(renderExperiment)}
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="sidebar-empty">
             <p>No experiments yet.</p>

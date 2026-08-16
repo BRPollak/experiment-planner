@@ -125,9 +125,10 @@ afterEach(() => {
   }
 });
 
-test("initializes an empty v3 database and persists calendars after reopening", () => {
+test("initializes an empty v5 database and persists calendars after reopening", () => {
   const path = temporaryPath();
   const database = openDatabase(path);
+  assert.equal(latestSupportedSchemaVersion, 5);
   assert.deepEqual(database.listCalendars(), []);
   assert.deepEqual(database.getMigrationStatus(), {
     required: false,
@@ -136,6 +137,7 @@ test("initializes an empty v3 database and persists calendars after reopening", 
   });
 
   const created = database.createCalendar({ name: "Primary calendar" });
+  assert.equal(created.archived, false);
   assert.equal(created.experimentCount, 0);
   assert.equal(created.taskCount, 0);
   database.close();
@@ -164,7 +166,7 @@ test("does not create migration backups for fresh or current databases", async (
       .prepare("SELECT version FROM schema_migrations ORDER BY version")
       .all()
       .map((row) => Number(row.version)),
-    [1, 2, 3],
+    [1, 2, 3, 4, 5],
   );
   recoveredMarkers.close();
 });
@@ -182,13 +184,16 @@ test("backs up WAL-backed v2 data before migration and produces a restorable sna
   }
 
   assert.equal(migrated.getCalendar("v2-calendar")?.name, "V2 calendar");
+  assert.equal(migrated.getCalendar("v2-calendar")?.archived, false);
   assert.equal(migrated.getExperiment("v2-experiment")?.description, "Preserve the experiment");
+  assert.equal(migrated.getExperiment("v2-experiment")?.archived, false);
   assert.equal(migrated.getTask("v2-task")?.notes, "Preserve the task");
   assert.equal(migrated.getTask("v2-task")?.time, null);
+  assert.equal(migrated.getTask("v2-task")?.completed, false);
 
   const backupPaths = migrationBackupPaths(path);
   assert.equal(backupPaths.length, 1);
-  assert.match(backupPaths[0], /\.pre-migration-v2-to-v3-/);
+  assert.match(backupPaths[0], /\.pre-migration-v2-to-v5-/);
   assert.equal(statSync(backupPaths[0]).mode & 0o777, 0o600);
 
   const snapshot = new DatabaseSync(backupPaths[0], { readOnly: true });
@@ -212,13 +217,37 @@ test("backs up WAL-backed v2 data before migration and produces a restorable sna
       .some((column) => column.name === "time"),
     false,
   );
+  assert.equal(
+    snapshot
+      .prepare("PRAGMA table_info(calendars)")
+      .all()
+      .some((column) => column.name === "archived"),
+    false,
+  );
+  assert.equal(
+    snapshot
+      .prepare("PRAGMA table_info(experiments)")
+      .all()
+      .some((column) => column.name === "archived"),
+    false,
+  );
+  assert.equal(
+    snapshot
+      .prepare("PRAGMA table_info(tasks)")
+      .all()
+      .some((column) => column.name === "completed"),
+    false,
+  );
   snapshot.close();
 
   const restoredPath = join(dirname(path), "restored.sqlite");
   copyFileSync(backupPaths[0], restoredPath);
   const restored = await openDatabaseWithBackup(restoredPath);
+  assert.equal(restored.getCalendar("v2-calendar")?.archived, false);
+  assert.equal(restored.getExperiment("v2-experiment")?.archived, false);
   assert.equal(restored.getTask("v2-task")?.name, "V2 task");
   assert.equal(restored.getTask("v2-task")?.time, null);
+  assert.equal(restored.getTask("v2-task")?.completed, false);
 });
 
 test("refuses an invalid backup without migrating or changing the source", async () => {
@@ -263,6 +292,13 @@ test("refuses an invalid backup without migrating or changing the source", async
     false,
   );
   assert.equal(
+    unchanged
+      .prepare("PRAGMA table_info(tasks)")
+      .all()
+      .some((column) => column.name === "completed"),
+    false,
+  );
+  assert.equal(
     (unchanged.prepare("SELECT COUNT(*) AS count FROM tasks").get() as { count: number }).count,
     2,
   );
@@ -297,7 +333,7 @@ test("retains only the newest small history of migration backups", async () => {
 
   const retained = migrationBackupPaths(path);
   assert.equal(retained.length, migrationBackupRetention);
-  assert.equal(retained.some((candidate) => candidate.includes("v2-to-v3")), true);
+  assert.equal(retained.some((candidate) => candidate.includes("v2-to-v5")), true);
 });
 
 test("keeps older recovery points when preflight rejects an inconsistent schema", async () => {
@@ -516,7 +552,7 @@ test("recovers an empty migration ledger from user_version before migrating", as
       .prepare("SELECT version FROM schema_migrations ORDER BY version")
       .all()
       .map((row) => Number(row.version)),
-    [1, 2, 3],
+    [1, 2, 3, 4, 5],
   );
   verification.close();
   assert.equal(migrationBackupPaths(path).length, 1);
@@ -644,8 +680,10 @@ test("migrates a populated v1 database without assigning or losing legacy data",
     unassignedTaskCount: 1,
   });
   assert.equal(database.getExperiment("legacy-experiment")?.calendarId, null);
+  assert.equal(database.getExperiment("legacy-experiment")?.archived, false);
   assert.equal(database.getTask("legacy-task")?.notes, "Also preserve me");
   assert.equal(database.getTask("legacy-task")?.time, null);
+  assert.equal(database.getTask("legacy-task")?.completed, false);
   assert.equal(
     database.getTask("legacy-task")?.createdAt,
     "2026-01-01T00:00:00.000Z",
@@ -659,6 +697,7 @@ test("migrates a populated v1 database without assigning or losing legacy data",
   assert.equal(database.getExperiment("legacy-experiment")?.calendarId, null);
 
   const target = database.createCalendar({ name: "Imported work" });
+  assert.equal(target.archived, false);
   assert.deepEqual(database.migrateUnassignedExperiments(target.id), {
     required: false,
     unassignedExperimentCount: 0,
@@ -673,17 +712,73 @@ test("migrates a populated v1 database without assigning or losing legacy data",
   database.close();
   const reopened = openDatabase(path);
   assert.equal(reopened.getExperiment("legacy-experiment")?.calendarId, target.id);
+  assert.equal(reopened.getExperiment("legacy-experiment")?.archived, false);
   assert.equal(reopened.getTask("legacy-task")?.name, "Legacy task");
   assert.equal(reopened.getTask("legacy-task")?.time, null);
+  assert.equal(reopened.getTask("legacy-task")?.completed, false);
   assert.equal(
     reopened.getTask("legacy-task")?.createdAt,
     "2026-01-01T00:00:00.000Z",
   );
   assert.equal(reopened.getCalendar(target.id)?.experimentCount, 1);
+  assert.equal(reopened.getCalendar(target.id)?.archived, false);
   assert.equal(reopened.getCalendar(target.id)?.taskCount, 1);
 });
 
-test("persists optional quarter-hour task times and supports removing them", () => {
+test("persists independent calendar and experiment archive state", () => {
+  const path = temporaryPath();
+  const database = openDatabase(path);
+  const calendar = database.createCalendar({ name: "Archive independently" });
+  const experiment = database.createExperiment({
+    name: "Independent child",
+    color: "#123456",
+    calendarId: calendar.id,
+  });
+
+  assert.equal(calendar.archived, false);
+  assert.equal(experiment.archived, false);
+
+  assert.equal(
+    database.updateCalendar(calendar.id, { archived: true })?.archived,
+    true,
+  );
+  assert.equal(
+    database.updateCalendar(calendar.id, { name: "Renamed while archived" })?.archived,
+    true,
+    "ordinary edits must preserve archive state",
+  );
+  assert.equal(
+    database.getExperiment(experiment.id)?.archived,
+    false,
+    "archiving a calendar must not overwrite its experiments' independent state",
+  );
+
+  assert.equal(
+    database.updateExperiment(experiment.id, { archived: true })?.archived,
+    true,
+  );
+  assert.equal(
+    database.updateExperiment(experiment.id, { description: "Still archived" })?.archived,
+    true,
+    "ordinary experiment edits must preserve archive state",
+  );
+  assert.equal(
+    database.updateCalendar(calendar.id, { archived: false })?.archived,
+    false,
+  );
+  assert.equal(
+    database.getExperiment(experiment.id)?.archived,
+    true,
+    "unarchiving a calendar must not implicitly unarchive its experiments",
+  );
+
+  database.close();
+  const reopened = openDatabase(path);
+  assert.equal(reopened.getCalendar(calendar.id)?.archived, false);
+  assert.equal(reopened.getExperiment(experiment.id)?.archived, true);
+});
+
+test("persists task completion and optional quarter-hour times", () => {
   const path = temporaryPath();
   const database = openDatabase(path);
   const calendar = database.createCalendar({ name: "Task times" });
@@ -703,18 +798,26 @@ test("persists optional quarter-hour task times and supports removing them", () 
     date: "2026-08-14",
     time: "09:15",
     experimentId: experiment.id,
+    completed: true,
   });
 
   assert.equal(untimed.time, null);
+  assert.equal(untimed.completed, false);
   assert.equal(timed.time, "09:15");
+  assert.equal(timed.completed, true);
   assert.equal(database.updateTask(timed.id, { name: "Renamed" })?.time, "09:15");
+  assert.equal(database.getTask(timed.id)?.completed, true);
+  assert.equal(database.updateTask(untimed.id, { completed: true })?.completed, true);
+  assert.equal(database.updateTask(timed.id, { completed: false })?.completed, false);
   assert.equal(database.updateTask(timed.id, { time: null })?.time, null);
   assert.throws(() => database.updateTask(untimed.id, { time: "09:10" }));
 
   database.close();
   const reopened = openDatabase(path);
   assert.equal(reopened.getTask(untimed.id)?.time, null);
+  assert.equal(reopened.getTask(untimed.id)?.completed, true);
   assert.equal(reopened.getTask(timed.id)?.time, null);
+  assert.equal(reopened.getTask(timed.id)?.completed, false);
 });
 
 test("scopes experiments and tasks by calendar and updates aggregate counts", () => {
@@ -777,7 +880,7 @@ test("scopes experiments and tasks by calendar and updates aggregate counts", ()
   assert.equal(database.getCalendar(secondCalendar.id)?.taskCount, 2);
 });
 
-test("requires confirmation before cascading a calendar's experiments and tasks", () => {
+test("requires archiving and then confirmation before cascading a calendar's contents", () => {
   const database = openDatabase();
   const calendar = database.createCalendar({ name: "Delete safely" });
   const experiment = database.createExperiment({
@@ -791,35 +894,44 @@ test("requires confirmation before cascading a calendar's experiments and tasks"
     experimentId: experiment.id,
   });
 
-  assert.deepEqual(database.deleteCalendar(calendar.id), {
-    deleted: false,
-    experimentCount: 1,
-    taskCount: 1,
-    confirmationRequired: true,
+  const activeDeletion = database.deleteCalendar(calendar.id, {
+    confirmCascade: true,
+    expectedExperimentCount: 1,
+    expectedTaskCount: 1,
   });
+  assert.equal(activeDeletion.deleted, false);
+  assert.equal(activeDeletion.archiveRequired, true);
   assert.ok(database.getCalendar(calendar.id));
   assert.ok(database.getExperiment(experiment.id));
   assert.ok(database.getTask(task.id));
+
+  assert.equal(
+    database.updateCalendar(calendar.id, { archived: true })?.archived,
+    true,
+  );
+  const unconfirmed = database.deleteCalendar(calendar.id);
+  assert.equal(unconfirmed.deleted, false);
+  assert.notEqual(unconfirmed.archiveRequired, true);
+  assert.equal(unconfirmed.experimentCount, 1);
+  assert.equal(unconfirmed.taskCount, 1);
+  assert.equal(unconfirmed.confirmationRequired, true);
 
   const secondExperiment = database.createExperiment({
     name: "Added after confirmation",
     color: "#FEDCBA",
     calendarId: calendar.id,
   });
-  assert.deepEqual(
-    database.deleteCalendar(calendar.id, {
-      confirmCascade: true,
-      expectedExperimentCount: 1,
-      expectedTaskCount: 1,
-    }),
-    {
-      deleted: false,
-      experimentCount: 2,
-      taskCount: 1,
-      confirmationRequired: true,
-      countsChanged: true,
-    },
-  );
+  const stale = database.deleteCalendar(calendar.id, {
+    confirmCascade: true,
+    expectedExperimentCount: 1,
+    expectedTaskCount: 1,
+  });
+  assert.equal(stale.deleted, false);
+  assert.notEqual(stale.archiveRequired, true);
+  assert.equal(stale.experimentCount, 2);
+  assert.equal(stale.taskCount, 1);
+  assert.equal(stale.confirmationRequired, true);
+  assert.equal(stale.countsChanged, true);
   assert.ok(database.getCalendar(calendar.id));
   assert.ok(database.getExperiment(secondExperiment.id));
 
@@ -838,7 +950,7 @@ test("requires confirmation before cascading a calendar's experiments and tasks"
   assert.equal(database.getTask(task.id), null);
 });
 
-test("retains the experiment-level task cascade guard", () => {
+test("requires archiving and then confirmation before cascading an experiment's tasks", () => {
   const database = openDatabase();
   const calendar = database.createCalendar({ name: "Experiment guard" });
   const experiment = database.createExperiment({
@@ -852,30 +964,38 @@ test("retains the experiment-level task cascade guard", () => {
     experimentId: experiment.id,
   });
 
-  assert.deepEqual(database.deleteExperiment(experiment.id), {
-    deleted: false,
-    taskCount: 1,
-    confirmationRequired: true,
+  const activeDeletion = database.deleteExperiment(experiment.id, {
+    confirmCascade: true,
+    expectedTaskCount: 1,
   });
+  assert.equal(activeDeletion.deleted, false);
+  assert.equal(activeDeletion.archiveRequired, true);
   assert.ok(database.getTask(task.id));
+
+  assert.equal(
+    database.updateExperiment(experiment.id, { archived: true })?.archived,
+    true,
+  );
+  const unconfirmed = database.deleteExperiment(experiment.id);
+  assert.equal(unconfirmed.deleted, false);
+  assert.notEqual(unconfirmed.archiveRequired, true);
+  assert.equal(unconfirmed.taskCount, 1);
+  assert.equal(unconfirmed.confirmationRequired, true);
 
   const secondTask = database.createTask({
     name: "Added after confirmation",
     date: "2026-08-15",
     experimentId: experiment.id,
   });
-  assert.deepEqual(
-    database.deleteExperiment(experiment.id, {
-      confirmCascade: true,
-      expectedTaskCount: 1,
-    }),
-    {
-      deleted: false,
-      taskCount: 2,
-      confirmationRequired: true,
-      countsChanged: true,
-    },
-  );
+  const stale = database.deleteExperiment(experiment.id, {
+    confirmCascade: true,
+    expectedTaskCount: 1,
+  });
+  assert.equal(stale.deleted, false);
+  assert.notEqual(stale.archiveRequired, true);
+  assert.equal(stale.taskCount, 2);
+  assert.equal(stale.confirmationRequired, true);
+  assert.equal(stale.countsChanged, true);
   assert.ok(database.getTask(secondTask.id));
 
   assert.deepEqual(database.deleteExperiment(experiment.id, {
@@ -891,7 +1011,7 @@ test("retains the experiment-level task cascade guard", () => {
   assert.equal(database.getCalendar(calendar.id)?.experimentCount, 0);
 });
 
-test("keeps count tokens optional when deleting empty resources", () => {
+test("requires empty resources to be archived and lets unarchive restore the guard", () => {
   const database = openDatabase();
   const calendar = database.createCalendar({ name: "Empty calendar" });
   const experiment = database.createExperiment({
@@ -900,10 +1020,25 @@ test("keeps count tokens optional when deleting empty resources", () => {
     calendarId: calendar.id,
   });
 
-  assert.deepEqual(
-    database.deleteExperiment(experiment.id, { confirmCascade: true }),
-    { deleted: true, taskCount: 0, confirmationRequired: false },
+  assert.equal(
+    database.deleteExperiment(experiment.id, { confirmCascade: true }).archiveRequired,
+    true,
   );
+  database.updateExperiment(experiment.id, { archived: true });
+  database.updateExperiment(experiment.id, { archived: false });
+  assert.equal(database.deleteExperiment(experiment.id).archiveRequired, true);
+  database.updateExperiment(experiment.id, { archived: true });
+  assert.deepEqual(database.deleteExperiment(experiment.id, { confirmCascade: true }), {
+    deleted: true,
+    taskCount: 0,
+    confirmationRequired: false,
+  });
+
+  assert.equal(database.deleteCalendar(calendar.id).archiveRequired, true);
+  database.updateCalendar(calendar.id, { archived: true });
+  database.updateCalendar(calendar.id, { archived: false });
+  assert.equal(database.deleteCalendar(calendar.id).archiveRequired, true);
+  database.updateCalendar(calendar.id, { archived: true });
   assert.deepEqual(database.deleteCalendar(calendar.id), {
     deleted: true,
     experimentCount: 0,

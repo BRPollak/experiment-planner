@@ -39,6 +39,7 @@ function withTaskCount(
 ): PlannerExperiment {
   return {
     ...experiment,
+    archived: experiment.archived === true,
     calendarId: experiment.calendarId ?? fallbackCalendarId,
     taskCount: Number.isFinite(experiment.taskCount) ? experiment.taskCount : fallbackTaskCount,
   };
@@ -47,6 +48,7 @@ function withTaskCount(
 function withCalendarCounts(calendar: PlannerCalendar, fallback?: PlannerCalendar): PlannerCalendar {
   return {
     ...calendar,
+    archived: calendar.archived === true,
     experimentCount: Number.isFinite(calendar.experimentCount)
       ? calendar.experimentCount
       : fallback?.experimentCount ?? 0,
@@ -54,6 +56,12 @@ function withCalendarCounts(calendar: PlannerCalendar, fallback?: PlannerCalenda
       ? calendar.taskCount
       : fallback?.taskCount ?? 0,
   };
+}
+
+function preferredCalendarId(calendars: PlannerCalendar[]): string | null {
+  return calendars.find((calendar) => !calendar.archived)?.id
+    ?? calendars[0]?.id
+    ?? null;
 }
 
 export default function App() {
@@ -78,9 +86,11 @@ export default function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [taskRevision, setTaskRevision] = useState(0);
   const [experimentRevision, setExperimentRevision] = useState(0);
+  const [completingTaskIds, setCompletingTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [movingTaskIds, setMovingTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const mutationGenerationRef = useRef(0);
   const activeTaskMutationsRef = useRef(0);
+  const completingTaskIdsRef = useRef(new Set<string>());
   const movingTaskIdsRef = useRef(new Set<string>());
   const calendarRange = useMemo(() => getCalendarRange(month), [month]);
 
@@ -111,7 +121,7 @@ export default function App() {
         setSelectedCalendarId((current) => (
           current && normalized.some((calendar) => calendar.id === current)
             ? current
-            : normalized[0]?.id ?? null
+            : preferredCalendarId(normalized)
         ));
       })
       .catch((error) => {
@@ -201,7 +211,9 @@ export default function App() {
     setExpandedDayDate(null);
     setExperiments([]);
     setTasks([]);
+    setCompletingTaskIds(new Set());
     setMovingTaskIds(new Set());
+    completingTaskIdsRef.current.clear();
     movingTaskIdsRef.current.clear();
   }, []);
 
@@ -298,6 +310,26 @@ export default function App() {
     if (pendingTaskDate) setExperimentEditor({ mode: "create" });
   };
 
+  const changeCalendarArchiveState = async (
+    calendar: PlannerCalendar,
+    archived: boolean,
+  ) => {
+    const updated = withCalendarCounts(
+      await plannerApi.setCalendarArchived(calendar.id, archived),
+      calendar,
+    );
+    setCalendars((current) => current.map((item) => (
+      item.id === calendar.id ? updated : item
+    )));
+    setCalendarEditor((current) => (
+      current?.mode === "edit" && current.calendar.id === calendar.id ? null : current
+    ));
+    showNotice({
+      kind: "success",
+      message: archived ? `“${calendar.name}” was archived.` : `“${calendar.name}” was unarchived.`,
+    });
+  };
+
   const createMigrationCalendar = async (name: string) => {
     const created = withCalendarCounts(await plannerApi.createCalendar({ name }));
     setCalendars((current) => [...current, created]);
@@ -346,7 +378,7 @@ export default function App() {
     const remaining = calendars.filter((calendar) => calendar.id !== deleted.id);
     setCalendars(remaining);
     if (selectedCalendarId === deleted.id) {
-      const nextId = remaining[0]?.id ?? null;
+      const nextId = preferredCalendarId(remaining);
       setSelectedCalendarId(nextId);
       setSelectedExperimentId(null);
       setExpandedDayDate(null);
@@ -385,7 +417,29 @@ export default function App() {
     }
   };
 
+  const changeExperimentArchiveState = async (
+    experiment: PlannerExperiment,
+    archived: boolean,
+  ) => {
+    const updated = withTaskCount(
+      await plannerApi.setExperimentArchived(experiment.id, archived),
+      experiment.taskCount,
+      experiment.calendarId,
+    );
+    setExperiments((current) => current.map((item) => (
+      item.id === experiment.id ? updated : item
+    )));
+    setExperimentEditor((current) => (
+      current?.mode === "edit" && current.experiment.id === experiment.id ? null : current
+    ));
+    showNotice({
+      kind: "success",
+      message: archived ? `“${experiment.name}” was archived.` : `“${experiment.name}” was unarchived.`,
+    });
+  };
+
   const requestExperimentDelete = (experiment: PlannerExperiment) => {
+    if (!experiment.archived) return;
     setExperimentEditor(null);
     setExperimentToDelete(experiment);
   };
@@ -506,6 +560,34 @@ export default function App() {
     }
   }, [showNotice]);
 
+  const toggleTaskCompletion = useCallback(async (task: Task, completed: boolean) => {
+    if (task.completed === completed || completingTaskIdsRef.current.has(task.id)) return;
+    completingTaskIdsRef.current.add(task.id);
+    setCompletingTaskIds(new Set(completingTaskIdsRef.current));
+    mutationGenerationRef.current += 1;
+    activeTaskMutationsRef.current += 1;
+    setTasks((current) => current.map((item) => (
+      item.id === task.id ? { ...item, completed } : item
+    )));
+    try {
+      const persisted = await plannerApi.updateTask(task.id, { completed });
+      setTasks((current) => current.map((item) => (
+        item.id === task.id ? { ...item, completed: persisted.completed } : item
+      )));
+    } catch (error) {
+      setTasks((current) => current.map((item) => (
+        item.id === task.id ? { ...item, completed: task.completed } : item
+      )));
+      showNotice({ kind: "error", message: `The task completion could not be updated. ${errorMessage(error)}` });
+    } finally {
+      activeTaskMutationsRef.current = Math.max(0, activeTaskMutationsRef.current - 1);
+      mutationGenerationRef.current += 1;
+      completingTaskIdsRef.current.delete(task.id);
+      setCompletingTaskIds(new Set(completingTaskIdsRef.current));
+      setTaskRevision((revision) => revision + 1);
+    }
+  }, [showNotice]);
+
   const selectedEditorCalendar = calendarEditor?.mode === "edit"
     ? calendars.find((item) => item.id === calendarEditor.calendar.id) ?? calendarEditor.calendar
     : undefined;
@@ -526,9 +608,16 @@ export default function App() {
         calendarsLoading={calendarsLoading}
         experiments={experiments}
         loading={experimentsLoading}
+        onArchiveCalendar={(calendar) => {
+          void changeCalendarArchiveState(calendar, true).catch((error) => {
+            showNotice({ kind: "error", message: `The calendar could not be archived. ${errorMessage(error)}` });
+          });
+        }}
         onCreate={openExperimentCreator}
         onCreateCalendar={openCalendarCreator}
-        onDeleteCalendar={setCalendarToDelete}
+        onDeleteCalendar={(calendar) => {
+          if (calendar.archived) setCalendarToDelete(calendar);
+        }}
         onEdit={(experiment) => {
           const scoped = experiments.find((item) => item.id === experiment.id);
           if (!scoped) return;
@@ -538,10 +627,16 @@ export default function App() {
         onEditCalendar={(calendar) => setCalendarEditor({ mode: "edit", calendar })}
         onSelect={setSelectedExperimentId}
         onSelectCalendar={selectCalendar}
+        onUnarchiveCalendar={(calendar) => {
+          void changeCalendarArchiveState(calendar, false).catch((error) => {
+            showNotice({ kind: "error", message: `The calendar could not be unarchived. ${errorMessage(error)}` });
+          });
+        }}
         selectedCalendarId={selectedCalendarId}
         selectedExperimentId={selectedExperimentId}
       />
       <MonthCalendar
+        completingTaskIds={completingTaskIds}
         experiments={experiments}
         hasCalendar={!!selectedCalendar}
         loading={workspaceLoading}
@@ -554,6 +649,7 @@ export default function App() {
         onMonthChange={changeMonth}
         onMoveTask={moveTask}
         onOpenDay={openExpandedDay}
+        onToggleTaskCompletion={toggleTaskCompletion}
         selectedCalendarName={selectedCalendar?.name}
         selectedExperimentId={selectedExperimentId}
         tasks={visibleTasks}
@@ -561,12 +657,14 @@ export default function App() {
 
       {expandedDayDate ? (
         <DayView
+          completingTaskIds={completingTaskIds}
           date={expandedDayDate}
           experiments={experiments}
           movingTaskIds={movingTaskIds}
           onClose={closeExpandedDay}
           onCreateTask={openTaskCreator}
           onEditTask={openTaskEditor}
+          onToggleTaskCompletion={toggleTaskCompletion}
           tasks={visibleTasks}
         />
       ) : null}
@@ -585,11 +683,17 @@ export default function App() {
             setCalendarEditor(null);
             setPendingTaskDate(null);
           }}
-          onRequestDelete={selectedEditorCalendar ? () => {
+          onArchive={selectedEditorCalendar && !selectedEditorCalendar.archived
+            ? () => changeCalendarArchiveState(selectedEditorCalendar, true)
+            : undefined}
+          onRequestDelete={selectedEditorCalendar?.archived ? () => {
             setCalendarEditor(null);
             setCalendarToDelete(selectedEditorCalendar);
           } : undefined}
           onSave={saveCalendar}
+          onUnarchive={selectedEditorCalendar?.archived
+            ? () => changeCalendarArchiveState(selectedEditorCalendar, false)
+            : undefined}
         />
       ) : null}
 
@@ -600,8 +704,16 @@ export default function App() {
             setExperimentEditor(null);
             setPendingTaskDate(null);
           }}
-          onRequestDelete={selectedEditorExperiment ? () => requestExperimentDelete(selectedEditorExperiment) : undefined}
+          onArchive={selectedEditorExperiment && !selectedEditorExperiment.archived
+            ? () => changeExperimentArchiveState(selectedEditorExperiment, true)
+            : undefined}
+          onRequestDelete={selectedEditorExperiment?.archived
+            ? () => requestExperimentDelete(selectedEditorExperiment)
+            : undefined}
           onSave={saveExperiment}
+          onUnarchive={selectedEditorExperiment?.archived
+            ? () => changeExperimentArchiveState(selectedEditorExperiment, false)
+            : undefined}
         />
       ) : null}
 

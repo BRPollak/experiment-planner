@@ -16,8 +16,8 @@ import {
   WEEKDAYS,
   WEEKDAY_ORDER,
 } from "../lib/dates";
-import { formatTaskTime, sortTasks } from "../lib/tasks";
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon, NotesIcon, PlusIcon } from "./Icons";
+import { formatTaskTime, sortCalendarTasks } from "../lib/tasks";
+import { CalendarIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, NotesIcon, PlusIcon } from "./Icons";
 
 interface MonthCalendarProps {
   month: Date;
@@ -26,6 +26,7 @@ interface MonthCalendarProps {
   selectedExperimentId: string | null;
   selectedCalendarName?: string;
   hasCalendar: boolean;
+  completingTaskIds?: ReadonlySet<string>;
   movingTaskIds: ReadonlySet<string>;
   loading: boolean;
   onMonthChange: (month: Date) => void;
@@ -35,6 +36,7 @@ interface MonthCalendarProps {
   onCreateCalendar: () => void;
   onEditTask: (task: Task) => void;
   onMoveTask: (task: Task, date: string) => void;
+  onToggleTaskCompletion: (task: Task, completed: boolean) => void;
 }
 
 export function MonthCalendar({
@@ -44,6 +46,7 @@ export function MonthCalendar({
   selectedExperimentId,
   selectedCalendarName,
   hasCalendar,
+  completingTaskIds = new Set(),
   movingTaskIds,
   loading,
   onMonthChange,
@@ -53,6 +56,7 @@ export function MonthCalendar({
   onCreateCalendar,
   onEditTask,
   onMoveTask,
+  onToggleTaskCompletion,
 }: MonthCalendarProps) {
   const range = useMemo(() => getCalendarRange(month), [month]);
   const todayKey = toDateKey(new Date());
@@ -73,7 +77,7 @@ export function MonthCalendar({
       grouped.set(task.date, current);
     });
     grouped.forEach((dayTasks, date) => {
-      grouped.set(date, sortTasks(dayTasks));
+      grouped.set(date, sortCalendarTasks(dayTasks));
     });
     return grouped;
   }, [tasks]);
@@ -271,46 +275,68 @@ export function MonthCalendar({
                   {dayTasks.map((task) => {
                     const experiment = experimentById.get(task.experimentId);
                     const isMoving = movingTaskIds.has(task.id);
+                    const isCompleting = completingTaskIds.has(task.id);
+                    const isSaving = isMoving || isCompleting;
                     const displayTime = formatTaskTime(task.time);
                     const taskStyle = {
                       "--task-color": experiment?.color ?? "#64748b",
                     } as CSSProperties;
                     return (
-                      <button
-                        aria-label={`${displayTime ? `${displayTime}, ` : ""}${task.name}, ${experiment?.name ?? "experiment"}${task.notes ? ", has notes" : ""}.${isMoving ? " Saving new date." : " Drag to reschedule or select to edit."}`}
-                        className={`calendar-task ${draggedTaskId === task.id ? "is-dragging" : ""} ${isMoving ? "is-saving" : ""}`}
-                        disabled={isMoving}
-                        draggable={!isMoving}
+                      <div
+                        className={`calendar-task-row ${draggedTaskId === task.id ? "is-dragging" : ""}`}
                         key={task.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onEditTask(task);
-                        }}
-                        onDragEnd={(event) => {
-                          event.stopPropagation();
-                          setDraggedTaskId(null);
-                          setDragOverDate(null);
-                        }}
-                        onDragStart={(event) => {
-                          if (isMoving) {
-                            event.preventDefault();
-                            return;
-                          }
-                          event.stopPropagation();
-                          setDraggedTaskId(task.id);
-                          event.dataTransfer.effectAllowed = "move";
-                          event.dataTransfer.setData("text/plain", task.id);
-                        }}
-                        style={taskStyle}
-                        tabIndex={isGridTabStop ? 0 : -1}
-                        title={`${displayTime ? `${displayTime} · ` : ""}${task.name} · ${experiment?.name ?? "Unknown experiment"}`}
-                        type="button"
                       >
-                        <span className="calendar-task__color" />
-                        {displayTime ? <time className="calendar-task__time" dateTime={task.time ?? undefined}>{displayTime}</time> : null}
-                        <span className="calendar-task__name">{task.name}</span>
-                        {task.notes ? <NotesIcon className="calendar-task__notes" /> : null}
-                      </button>
+                        <button
+                          aria-label={`${displayTime ? `${displayTime}, ` : ""}${task.name}, ${experiment?.name ?? "experiment"}${task.notes ? ", has notes" : ""}.${task.completed ? " Completed." : ""}${isMoving ? " Saving new date." : isCompleting ? " Saving completion status." : " Drag to reschedule or select to edit."}`}
+                          className={`calendar-task ${task.completed ? "is-completed" : ""} ${draggedTaskId === task.id ? "is-dragging" : ""} ${isSaving ? "is-saving" : ""}`}
+                          disabled={isSaving}
+                          draggable={!isSaving}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onEditTask(task);
+                          }}
+                          onDragEnd={(event) => {
+                            event.stopPropagation();
+                            setDraggedTaskId(null);
+                            setDragOverDate(null);
+                          }}
+                          onDragStart={(event) => {
+                            if (isSaving) {
+                              event.preventDefault();
+                              return;
+                            }
+                            event.stopPropagation();
+                            setDraggedTaskId(task.id);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData("text/plain", task.id);
+                          }}
+                          style={taskStyle}
+                          tabIndex={isGridTabStop ? 0 : -1}
+                          title={`${task.completed ? "Completed · " : ""}${displayTime ? `${displayTime} · ` : ""}${task.name} · ${experiment?.name ?? "Unknown experiment"}`}
+                          type="button"
+                        >
+                          <span className="calendar-task__color" />
+                          {displayTime ? <time className="calendar-task__time" dateTime={task.time ?? undefined}>{displayTime}</time> : null}
+                          <span className="calendar-task__name">{task.name}</span>
+                          {task.notes ? <NotesIcon className="calendar-task__notes" /> : null}
+                        </button>
+                        <button
+                          aria-checked={task.completed}
+                          aria-label={`Mark ${task.name} ${task.completed ? "incomplete" : "complete"}`}
+                          className={`calendar-task__checkbox ${isCompleting ? "is-saving" : ""}`}
+                          disabled={isSaving}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onToggleTaskCompletion(task, !task.completed);
+                          }}
+                          role="checkbox"
+                          tabIndex={isGridTabStop ? 0 : -1}
+                          title={task.completed ? "Mark incomplete" : "Mark complete"}
+                          type="button"
+                        >
+                          <CheckIcon />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>

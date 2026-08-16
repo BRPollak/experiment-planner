@@ -1,5 +1,7 @@
 import type {
   ApiErrorBody,
+  CalendarUpdateInput,
+  ExperimentUpdateInput,
   Task,
   TaskInput,
 } from "../../shared/models";
@@ -88,12 +90,16 @@ export const plannerApi = {
     return unwrapEntity<PlannerCalendar>(result, "calendar");
   },
 
-  async updateCalendar(id: string, input: CalendarInput): Promise<PlannerCalendar> {
+  async updateCalendar(id: string, input: CalendarUpdateInput): Promise<PlannerCalendar> {
     const result = await request<PlannerCalendar | Record<string, unknown>>(
       `/api/calendars/${encodeURIComponent(id)}`,
-      { method: "PUT", body: JSON.stringify(input) },
+      { method: "PATCH", body: JSON.stringify(input) },
     );
     return unwrapEntity<PlannerCalendar>(result, "calendar");
+  },
+
+  async setCalendarArchived(id: string, archived: boolean): Promise<PlannerCalendar> {
+    return this.updateCalendar(id, { archived });
   },
 
   async deleteCalendar(
@@ -139,12 +145,16 @@ export const plannerApi = {
     return unwrapEntity<PlannerExperiment>(result, "experiment");
   },
 
-  async updateExperiment(id: string, input: PlannerExperimentInput): Promise<PlannerExperiment> {
+  async updateExperiment(id: string, input: ExperimentUpdateInput): Promise<PlannerExperiment> {
     const result = await request<PlannerExperiment | Record<string, unknown>>(
       `/api/experiments/${encodeURIComponent(id)}`,
-      { method: "PUT", body: JSON.stringify(input) },
+      { method: "PATCH", body: JSON.stringify(input) },
     );
     return unwrapEntity<PlannerExperiment>(result, "experiment");
+  },
+
+  async setExperimentArchived(id: string, archived: boolean): Promise<PlannerExperiment> {
+    return this.updateExperiment(id, { archived });
   },
 
   async deleteExperiment(id: string, expectedTaskCount: number): Promise<void> {

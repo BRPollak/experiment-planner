@@ -1,6 +1,7 @@
 export interface Calendar {
   id: string;
   name: string;
+  archived: boolean;
   createdAt: string;
   updatedAt: string;
   experimentCount: number;
@@ -12,6 +13,7 @@ export interface Experiment {
   name: string;
   color: string;
   description: string | null;
+  archived: boolean;
   /** Null only for records retained from a pre-calendar database migration. */
   calendarId: string | null;
   createdAt: string;
@@ -26,6 +28,7 @@ export interface Task {
   time: string | null;
   experimentId: string;
   notes: string | null;
+  completed: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,6 +37,10 @@ export interface CalendarInput {
   name: string;
 }
 
+export type CalendarUpdateInput = Partial<CalendarInput> & {
+  archived?: boolean;
+};
+
 export interface ExperimentInput {
   name: string;
   color: string;
@@ -41,12 +48,17 @@ export interface ExperimentInput {
   calendarId: string;
 }
 
+export type ExperimentUpdateInput = Partial<ExperimentInput> & {
+  archived?: boolean;
+};
+
 export interface TaskInput {
   name: string;
   date: string;
   time?: string | null;
   experimentId: string;
   notes?: string | null;
+  completed?: boolean;
 }
 
 export interface ApiErrorBody {

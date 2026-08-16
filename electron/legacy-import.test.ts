@@ -79,7 +79,7 @@ test("parses only one absolute legacy import path", () => {
   ]));
 });
 
-test("backs up the current supported database, including timed tasks", async () => {
+test("backs up a current v5 database, including archive state and completed timed tasks", async () => {
   const directory = temporaryDirectory();
   const sourcePath = join(directory, "legacy.sqlite");
   const destinationPath = join(directory, "user-data", "experiment-planner.sqlite");
@@ -95,7 +95,18 @@ test("backs up the current supported database, including timed tasks", async () 
     date: "2026-08-14",
     time: "10:30",
     experimentId: experiment.id,
+    completed: true,
   });
+  source.updateExperiment(experiment.id, { archived: true });
+  source.updateCalendar(calendar.id, { archived: true });
+
+  const sourceMetadata = new DatabaseSync(sourcePath, { readOnly: true });
+  assert.equal(
+    (sourceMetadata.prepare("PRAGMA user_version").get() as { user_version: number })
+      .user_version,
+    5,
+  );
+  sourceMetadata.close();
 
   // Keep the WAL-mode source open to exercise SQLite's online backup behavior.
   assert.equal(
@@ -108,9 +119,12 @@ test("backs up the current supported database, including timed tasks", async () 
   source.close();
 
   const imported = new ExperimentPlannerDatabase(destinationPath);
+  assert.equal(imported.getCalendar(calendar.id)?.archived, true);
   assert.equal(imported.getExperiment(experiment.id)?.name, "Imported");
+  assert.equal(imported.getExperiment(experiment.id)?.archived, true);
   assert.equal(imported.getTask(task.id)?.name, "Imported task");
   assert.equal(imported.getTask(task.id)?.time, "10:30");
+  assert.equal(imported.getTask(task.id)?.completed, true);
   imported.close();
 });
 
@@ -145,8 +159,10 @@ test("accepts a supported v1 database for normal application migration", async (
 
   const imported = new ExperimentPlannerDatabase(destinationPath);
   assert.equal(imported.getExperiment("legacy-experiment")?.calendarId, null);
+  assert.equal(imported.getExperiment("legacy-experiment")?.archived, false);
   assert.equal(imported.getTask("legacy-task")?.name, "Legacy task");
   assert.equal(imported.getTask("legacy-task")?.time, null);
+  assert.equal(imported.getTask("legacy-task")?.completed, false);
   assert.equal(imported.getMigrationStatus().required, true);
   imported.close();
 });
@@ -205,7 +221,7 @@ test("rejects a database newer than the supported schema version", async () => {
   const source = new ExperimentPlannerDatabase(sourcePath);
   source.close();
   const future = new DatabaseSync(sourcePath);
-  future.exec("PRAGMA user_version = 4");
+  future.exec("PRAGMA user_version = 6");
   future.close();
 
   await assert.rejects(
@@ -213,7 +229,7 @@ test("rejects a database newer than the supported schema version", async () => {
       "electron",
       `--import-legacy-db=${sourcePath}`,
     ]),
-    /newer than the supported version 3/i,
+    /schema version 6 is newer than the supported version 5/i,
   );
   assert.equal(existsSync(destinationPath), false);
 });

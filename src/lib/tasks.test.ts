@@ -6,16 +6,19 @@ import {
   formatTaskTime,
   groupTasksByExperiment,
   isValidTaskTime,
+  sortCalendarTasks,
   sortTasks,
   type TaskGroupable,
 } from "./tasks";
 
 interface TestTask extends TaskGroupable {
+  completed: boolean;
   id: string;
 }
 
 function task(id: string, overrides: Omit<Partial<TestTask>, "id"> = {}): TestTask {
   return {
+    completed: false,
     id,
     experimentId: "experiment-a",
     ...overrides,
@@ -82,6 +85,41 @@ test("sortTasks treats older records without a time as untimed", () => {
   ];
 
   assert.deepEqual(sortTasks(input).map(({ id }) => id), ["timed", "legacy-untimed"]);
+});
+
+test("sortCalendarTasks moves completed tasks below incomplete tasks without changing either bucket's normal order", () => {
+  const input = [
+    task("completed-untimed", {
+      completed: true,
+      createdAt: "2026-01-01T05:00:00.000Z",
+    }),
+    task("active-later", {
+      time: "11:00",
+      createdAt: "2026-01-01T08:00:00.000Z",
+    }),
+    task("completed-earliest", {
+      completed: true,
+      time: "08:00",
+      createdAt: "2026-01-01T09:00:00.000Z",
+    }),
+    task("active-earlier", {
+      time: "09:00",
+      createdAt: "2026-01-01T10:00:00.000Z",
+    }),
+  ];
+
+  assert.deepEqual(sortCalendarTasks(input).map(({ id }) => id), [
+    "active-earlier",
+    "active-later",
+    "completed-earliest",
+    "completed-untimed",
+  ]);
+  assert.deepEqual(input.map(({ id }) => id), [
+    "completed-untimed",
+    "active-later",
+    "completed-earliest",
+    "active-earlier",
+  ]);
 });
 
 test("groupTasksByExperiment orders sections by first globally sorted task", () => {
