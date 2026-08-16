@@ -24,11 +24,12 @@ Installing a newer version does not remove your existing planner data.
 2. Create one or more color-coded **experiments** inside that calendar.
 3. Select **Add Task**, or use the plus button on a calendar day.
 4. Give the task a date, optional time, experiment, and notes.
-5. Click a task to edit it, or drag it to another day to reschedule it.
-6. Select an experiment in the sidebar to filter the calendar.
-7. Click a day to open a larger view of everything scheduled for it.
+5. Use a task's checkbox to mark it complete, or click the task to edit it.
+6. Drag a task to another day to reschedule it.
+7. Select an experiment in the sidebar to filter the calendar.
+8. Click a day to open a larger view of everything scheduled for it.
 
-Deleting a calendar or experiment also deletes the tasks inside it, so the app asks for confirmation first.
+Calendars and experiments must be archived before they can be permanently deleted. Archiving is reversible and leaves their contents intact. Permanent deletion still asks for confirmation and removes the tasks inside; tasks themselves can be deleted directly.
 
 ## Your data
 
