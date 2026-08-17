@@ -1,7 +1,7 @@
 {
   "name": "experiment-planner",
   "productName": "Experiment Planner",
-  "description": "A local-first experiment and task planner built around a full-screen monthly calendar.",
+  "description": "A local-first experiment and task planner built around a full-screen calendar.",
   "private": true,
   "version": "0.3.0",
   "author": {

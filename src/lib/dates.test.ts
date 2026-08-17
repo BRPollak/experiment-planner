@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   getCalendarRange,
+  getWeekRange,
+  shiftWeek,
   toDateKey,
   WEEKDAY_ORDER,
   WEEKDAYS,
+  weekHeading,
   type CalendarDay,
 } from "./dates";
 
@@ -56,6 +59,45 @@ test("weekday headings run chronologically from Sunday through Saturday", () => 
     "Saturday",
   ]);
   assert.deepEqual([...WEEKDAY_ORDER], [0, 1, 2, 3, 4, 5, 6]);
+});
+
+test("a week contains exactly seven configured weekdays in chronological order", () => {
+  const range = getWeekRange(new Date(2026, 7, 19));
+
+  assert.equal(range.weekCount, 1);
+  assert.equal(range.days.length, WEEKDAY_ORDER.length);
+  assert.equal(range.start, "2026-08-16");
+  assert.equal(range.end, "2026-08-22");
+  assert.deepEqual(range.days.map(({ dateKey }) => dateKey), [
+    "2026-08-16",
+    "2026-08-17",
+    "2026-08-18",
+    "2026-08-19",
+    "2026-08-20",
+    "2026-08-21",
+    "2026-08-22",
+  ]);
+  assert.deepEqual(
+    range.days.map(({ date }) => date.getDay()),
+    [...WEEKDAY_ORDER],
+  );
+});
+
+test("week headings format one-month, cross-month, and cross-year ranges", () => {
+  assert.equal(weekHeading(new Date(2026, 7, 19)), "August 2026");
+  assert.equal(weekHeading(new Date(2026, 7, 31)), "August – September 2026");
+  assert.equal(
+    weekHeading(new Date(2026, 11, 30)),
+    "December 2026 – January 2027",
+  );
+});
+
+test("shifting a week moves exactly seven local calendar dates in either direction", () => {
+  const referenceDate = new Date(2026, 0, 1);
+
+  assert.equal(toDateKey(shiftWeek(referenceDate, -1)), "2025-12-25");
+  assert.equal(toDateKey(shiftWeek(referenceDate, 1)), "2026-01-08");
+  assert.equal(toDateKey(referenceDate), "2026-01-01");
 });
 
 test("a month beginning Saturday includes the preceding Sunday and stays chronological", () => {
@@ -178,6 +220,38 @@ test("local dates stay consecutive through spring and fall daylight-saving trans
     );
     assertChronologicalSundayRows(new Date(2026, 2, 1));
     assertChronologicalSundayRows(new Date(2026, 10, 1));
+  } finally {
+    if (originalTimeZone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimeZone;
+  }
+});
+
+test("week ranges and shifts stay chronological through daylight-saving transitions", () => {
+  const originalTimeZone = process.env.TZ;
+  process.env.TZ = "America/Los_Angeles";
+  try {
+    const spring = getWeekRange(new Date(2026, 2, 10));
+    const fall = getWeekRange(new Date(2026, 10, 3));
+
+    for (const range of [spring, fall]) {
+      range.days.forEach((day, index) => {
+        assert.equal(day.dateKey, toDateKey(addLocalDays(range.days[0].date, index)));
+      });
+      assert.deepEqual(
+        range.days.map(({ date }) => date.getDay()),
+        [...WEEKDAY_ORDER],
+      );
+    }
+
+    const springStart = new Date(2026, 2, 7);
+    const springShifted = shiftWeek(springStart, 1);
+    const fallStart = new Date(2026, 9, 31);
+    const fallShifted = shiftWeek(fallStart, 1);
+
+    assert.equal(toDateKey(springShifted), "2026-03-14");
+    assert.equal(toDateKey(fallShifted), "2026-11-07");
+    assert.equal(springShifted.getTime() - springStart.getTime(), 167 * 60 * 60 * 1000);
+    assert.equal(fallShifted.getTime() - fallStart.getTime(), 169 * 60 * 60 * 1000);
   } finally {
     if (originalTimeZone === undefined) delete process.env.TZ;
     else process.env.TZ = originalTimeZone;

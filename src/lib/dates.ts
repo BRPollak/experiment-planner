@@ -64,8 +64,34 @@ export function getCalendarRange(month: Date): CalendarRange {
   };
 }
 
+export function getWeekRange(referenceDate: Date): CalendarRange {
+  const referenceWeekday = referenceDate.getDay() as (typeof WEEKDAY_ORDER)[number];
+  const referenceDayIndex = WEEKDAY_ORDER.indexOf(referenceWeekday);
+  const firstVisible = addLocalDays(referenceDate, -referenceDayIndex);
+  const days = WEEKDAY_ORDER.map((_, index) => {
+    const date = addLocalDays(firstVisible, index);
+    return {
+      date,
+      dateKey: toDateKey(date),
+      isCurrentMonth: date.getFullYear() === referenceDate.getFullYear()
+        && date.getMonth() === referenceDate.getMonth(),
+    };
+  });
+
+  return {
+    days,
+    start: days[0].dateKey,
+    end: days[days.length - 1].dateKey,
+    weekCount: 1,
+  };
+}
+
 export function shiftMonth(month: Date, delta: number): Date {
   return new Date(month.getFullYear(), month.getMonth() + delta, 1);
+}
+
+export function shiftWeek(referenceDate: Date, delta: number): Date {
+  return addLocalDays(referenceDate, delta * WEEKDAY_ORDER.length);
 }
 
 export function monthHeading(month: Date): string {
@@ -73,6 +99,30 @@ export function monthHeading(month: Date): string {
     month: "long",
     year: "numeric",
   }).format(month);
+}
+
+export function weekHeading(referenceDate: Date): string {
+  const { days } = getWeekRange(referenceDate);
+  const firstDay = days[0].date;
+  const lastDay = days[days.length - 1].date;
+  const month = new Intl.DateTimeFormat(undefined, { month: "long" });
+  const monthAndYear = new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+
+  if (
+    firstDay.getFullYear() === lastDay.getFullYear()
+    && firstDay.getMonth() === lastDay.getMonth()
+  ) {
+    return monthAndYear.format(firstDay);
+  }
+
+  if (firstDay.getFullYear() === lastDay.getFullYear()) {
+    return `${month.format(firstDay)} – ${monthAndYear.format(lastDay)}`;
+  }
+
+  return `${monthAndYear.format(firstDay)} – ${monthAndYear.format(lastDay)}`;
 }
 
 export function friendlyDate(value: string): string {

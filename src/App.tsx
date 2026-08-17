@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ExperimentInput, Task, TaskInput } from "../shared/models";
 import { CalendarEditor } from "./components/CalendarEditor";
+import type { CalendarView } from "./components/CalendarToolbar";
+import { CalendarWorkspace } from "./components/CalendarWorkspace";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { DayView } from "./components/DayView";
 import { ExperimentEditor } from "./components/ExperimentEditor";
 import { ExperimentSidebar } from "./components/ExperimentSidebar";
 import { CloseIcon } from "./components/Icons";
 import { MigrationGate } from "./components/MigrationGate";
-import { MonthCalendar } from "./components/MonthCalendar";
 import { TaskEditor } from "./components/TaskEditor";
 import { ApiError, errorMessage, plannerApi } from "./lib/api";
 import { getCalendarRange } from "./lib/dates";
@@ -70,7 +71,8 @@ export default function App() {
   const [experiments, setExperiments] = useState<PlannerExperiment[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedExperimentId, setSelectedExperimentId] = useState<string | null>(null);
-  const [month, setMonth] = useState(() => new Date());
+  const [calendarView, setCalendarView] = useState<CalendarView>("month");
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [calendarsLoading, setCalendarsLoading] = useState(true);
   const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
   const [experimentsLoading, setExperimentsLoading] = useState(false);
@@ -92,7 +94,7 @@ export default function App() {
   const activeTaskMutationsRef = useRef(0);
   const completingTaskIdsRef = useRef(new Set<string>());
   const movingTaskIdsRef = useRef(new Set<string>());
-  const calendarRange = useMemo(() => getCalendarRange(month), [month]);
+  const calendarRange = useMemo(() => getCalendarRange(calendarDate), [calendarDate]);
 
   const selectedCalendar = useMemo(
     () => calendars.find((calendar) => calendar.id === selectedCalendarId),
@@ -287,9 +289,9 @@ export default function App() {
     setExpandedDayDate(null);
   }, []);
 
-  const changeMonth = useCallback((nextMonth: Date) => {
+  const changeCalendarDate = useCallback((nextDate: Date) => {
     setExpandedDayDate(null);
-    setMonth(nextMonth);
+    setCalendarDate(nextDate);
   }, []);
 
   const saveCalendar = async (input: CalendarInput) => {
@@ -635,24 +637,26 @@ export default function App() {
         selectedCalendarId={selectedCalendarId}
         selectedExperimentId={selectedExperimentId}
       />
-      <MonthCalendar
+      <CalendarWorkspace
         completingTaskIds={completingTaskIds}
+        date={calendarDate}
         experiments={experiments}
         hasCalendar={!!selectedCalendar}
         loading={workspaceLoading}
-        month={month}
         movingTaskIds={movingTaskIds}
         onCreateCalendar={openCalendarCreator}
         onCreateExperiment={openExperimentCreator}
         onCreateTask={openTaskCreator}
+        onDateChange={changeCalendarDate}
         onEditTask={openTaskEditor}
-        onMonthChange={changeMonth}
         onMoveTask={moveTask}
         onOpenDay={openExpandedDay}
         onToggleTaskCompletion={toggleTaskCompletion}
+        onViewChange={setCalendarView}
         selectedCalendarName={selectedCalendar?.name}
         selectedExperimentId={selectedExperimentId}
         tasks={visibleTasks}
+        view={calendarView}
       />
 
       {expandedDayDate ? (

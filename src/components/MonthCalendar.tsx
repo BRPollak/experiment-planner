@@ -17,19 +17,17 @@ import {
   WEEKDAY_ORDER,
 } from "../lib/dates";
 import { formatTaskTime, sortCalendarTasks } from "../lib/tasks";
-import { CalendarIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, NotesIcon, PlusIcon } from "./Icons";
+import { CalendarToolbar, type CalendarView } from "./CalendarToolbar";
+import { CalendarIcon, CheckIcon, NotesIcon, PlusIcon } from "./Icons";
 
-interface MonthCalendarProps {
+export interface MonthCalendarBodyProps {
   month: Date;
   tasks: Task[];
   experiments: Experiment[];
-  selectedExperimentId: string | null;
-  selectedCalendarName?: string;
   hasCalendar: boolean;
   completingTaskIds?: ReadonlySet<string>;
   movingTaskIds: ReadonlySet<string>;
   loading: boolean;
-  onMonthChange: (month: Date) => void;
   onCreateTask: (date: string) => void;
   onOpenDay: (date: string) => void;
   onCreateExperiment: () => void;
@@ -39,17 +37,55 @@ interface MonthCalendarProps {
   onToggleTaskCompletion: (task: Task, completed: boolean) => void;
 }
 
-export function MonthCalendar({
+interface MonthCalendarProps extends MonthCalendarBodyProps {
+  selectedExperimentId: string | null;
+  selectedCalendarName?: string;
+  view: CalendarView;
+  onMonthChange: (month: Date) => void;
+  onViewChange: (view: CalendarView) => void;
+}
+
+export function MonthCalendar(props: MonthCalendarProps) {
+  const {
+    experiments,
+    hasCalendar,
+    month,
+    onMonthChange,
+    onViewChange,
+    selectedCalendarName,
+    selectedExperimentId,
+    view,
+  } = props;
+
+  return (
+    <main className="calendar-shell">
+      <CalendarToolbar
+        experiments={experiments}
+        hasCalendar={hasCalendar}
+        heading={monthHeading(month)}
+        nextLabel="Next month"
+        onNext={() => onMonthChange(shiftMonth(month, 1))}
+        onPrevious={() => onMonthChange(shiftMonth(month, -1))}
+        onToday={() => onMonthChange(new Date())}
+        onViewChange={onViewChange}
+        previousLabel="Previous month"
+        selectedCalendarName={selectedCalendarName}
+        selectedExperimentId={selectedExperimentId}
+        view={view}
+      />
+      <MonthCalendarBody {...props} />
+    </main>
+  );
+}
+
+export function MonthCalendarBody({
   month,
   tasks,
   experiments,
-  selectedExperimentId,
-  selectedCalendarName,
   hasCalendar,
   completingTaskIds = new Set(),
   movingTaskIds,
   loading,
-  onMonthChange,
   onCreateTask,
   onOpenDay,
   onCreateExperiment,
@@ -57,7 +93,7 @@ export function MonthCalendar({
   onEditTask,
   onMoveTask,
   onToggleTaskCompletion,
-}: MonthCalendarProps) {
+}: MonthCalendarBodyProps) {
   const range = useMemo(() => getCalendarRange(month), [month]);
   const todayKey = toDateKey(new Date());
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -82,14 +118,8 @@ export function MonthCalendar({
     return grouped;
   }, [tasks]);
 
-  const selectedExperiment = selectedExperimentId
-    ? experimentById.get(selectedExperimentId)
-    : undefined;
   const isCurrentMonth = new Date().getFullYear() === month.getFullYear()
     && new Date().getMonth() === month.getMonth();
-  const suggestedTaskDate = isCurrentMonth
-    ? todayKey
-    : toDateKey(new Date(month.getFullYear(), month.getMonth(), 1));
   const focusedDateIsVisible = focusedDateKey
     ? range.days.some((day) => day.dateKey === focusedDateKey)
     : false;
@@ -158,32 +188,7 @@ export function MonthCalendar({
   };
 
   return (
-    <main className="calendar-shell">
-      <header className="calendar-toolbar">
-        <div className="calendar-toolbar__title">
-          <h2>{monthHeading(month)}</h2>
-          <div className="calendar-toolbar__scope">
-            {selectedExperiment ? <span className="scope-dot" style={{ backgroundColor: selectedExperiment.color }} /> : null}
-            <span>{hasCalendar ? `${selectedCalendarName ?? "Calendar"} · ${selectedExperiment?.name ?? "All experiments"}` : "No calendar selected"}</span>
-          </div>
-        </div>
-
-        <div aria-label="Calendar navigation" className="calendar-navigation">
-          <button aria-label="Previous month" className="icon-button toolbar-icon-button" onClick={() => onMonthChange(shiftMonth(month, -1))} title="Previous month" type="button">
-            <ChevronLeftIcon />
-          </button>
-          <button className="button button--secondary today-button" onClick={() => onMonthChange(new Date())} type="button">Today</button>
-          <button aria-label="Next month" className="icon-button toolbar-icon-button" onClick={() => onMonthChange(shiftMonth(month, 1))} title="Next month" type="button">
-            <ChevronRightIcon />
-          </button>
-        </div>
-
-        <button className="button button--primary add-task-button" onClick={() => onCreateTask(suggestedTaskDate)} type="button">
-          <PlusIcon /> Add Task
-        </button>
-      </header>
-
-      <div aria-busy={loading} className="calendar-body">
+    <div aria-busy={loading} className="calendar-body">
         {loading ? <div className="calendar-loading-bar" /> : null}
         <div className="weekday-header" role="row">
           {WEEKDAYS.map((weekday, index) => (
@@ -364,7 +369,6 @@ export function MonthCalendar({
             </button>
           </div>
         ) : null}
-      </div>
-    </main>
+    </div>
   );
 }

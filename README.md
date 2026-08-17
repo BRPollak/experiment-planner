@@ -1,6 +1,6 @@
 # Experiment Planner
 
-Experiment Planner is a private, local-first macOS app for organizing experiments and their tasks on a monthly calendar.
+Experiment Planner is a private, local-first macOS app for organizing experiments and their tasks in month and week calendar views.
 
 Use separate calendars for different projects, group work into color-coded experiments, and schedule tasks with optional times and notes. Everything is stored locally on your Mac—there are no accounts, cloud services, or external databases.
 
@@ -29,7 +29,7 @@ Installing a newer version does not remove your existing planner data.
 
 1. Create a **calendar** for a project or area of work.
 2. Create one or more color-coded **experiments** inside that calendar.
-3. Select **Add Task**, or use the plus button on a calendar day.
+3. Use the plus button on a calendar day, or open a day and select **Add task**.
 4. Give the task a date, optional time, experiment, and notes.
 5. Use a task's checkbox to mark it complete, or click the task to edit it.
 6. Drag a task to another day to reschedule it.

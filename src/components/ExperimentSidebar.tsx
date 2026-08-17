@@ -92,7 +92,7 @@ export function ExperimentSidebar({
         <span className="brand-mark"><FlaskIcon /></span>
         <div>
           <h1>Experiment Planner</h1>
-          <p>Monthly workspace</p>
+          <p>Calendar workspace</p>
         </div>
       </div>
 

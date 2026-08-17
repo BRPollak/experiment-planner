@@ -197,9 +197,11 @@ function renderCalendar(
       onMoveTask={() => undefined}
       onOpenDay={(date) => spies.opened.push(date)}
       onToggleTaskCompletion={(task, completed) => spies.toggled.push([task, completed])}
+      onViewChange={() => undefined}
       selectedCalendarName="Calendar"
       selectedExperimentId={null}
       tasks={tasks}
+      view="month"
     />,
   );
   return { container, spies };
