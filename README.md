@@ -14,7 +14,14 @@ Experiment Planner currently supports Apple silicon Macs running macOS 12 or new
 4. Drag **Experiment Planner** into the **Applications** folder.
 5. Open Experiment Planner from Applications.
 
-The app is not currently notarized by Apple. On first launch, macOS may require you to Control-click the app, choose **Open**, and then confirm **Open**.
+### If macOS blocks the app
+
+The app is not currently notarized by Apple, so macOS may block it the first time you open it.
+
+1. Try to open **Experiment Planner** from Applications.
+2. Open **System Settings**, then go to **Privacy & Security**.
+3. Scroll down and click **Open Anyway** for Experiment Planner.
+4. Confirm that you want to open the app.
 
 Installing a newer version does not remove your existing planner data.
 
