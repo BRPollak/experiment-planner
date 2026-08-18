@@ -3,7 +3,7 @@
   "productName": "Experiment Planner",
   "description": "A local-first experiment and task planner built around a full-screen calendar.",
   "private": true,
-  "version": "0.3.0",
+  "version": "1.0.0",
   "author": {
     "name": "BRPollak",
     "url": "https://github.com/BRPollak"
